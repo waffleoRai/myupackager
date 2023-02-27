@@ -6,7 +6,6 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 import waffleoRai_Utils.FileBuffer;
@@ -16,6 +15,8 @@ public class Main {
 	
 	public static final String TOOLNAME_UNPACK_ISO = "isounpack";
 	public static final String TOOLNAME_UNPACK_ARC = "arcunpack";
+	public static final String TOOLNAME_PACK_ARC = "arcpack";
+	public static final String TOOLNAME_PACK_ISO = "isopack";
 	
 	private static Map<String, String> parseargs(String[] args){
 		Map<String, String> map = new HashMap<String, String>();
@@ -56,10 +57,12 @@ public class Main {
 	
 	public static void printUsage_IsoUnpack(){
 		System.err.println("MyuPackager ISO Unpack ---------- ");
-		System.err.println("--iso [Path to input CD image]");
-		System.err.println("--cue [Path to cue table if input image is a bin]");
-		System.err.println("--out [Path to directory to place extracted CD contents]");
-		System.err.println("--arcspec [Path to directory containing tables w/ file info for archives (file info, VOICE ptr table etc.)]");
+		System.err.println("--iso\t\t[Path to input CD image]");
+		System.err.println("--cue\t\t[Path to cue table if input image is a bin]");
+		System.err.println("--cdout\t\t[Path to directory to place extracted CD contents]");
+		System.err.println("--assetout\t\t[Path to directory to place extracted assets]");
+		System.err.println("--arcspec\t\t[Path to directory containing tables w/ file info for archives (file info, VOICE ptr table etc.)]");
+		System.err.println("--log\t\t[Path to log file output (Defaults to stderr)]");
 	}
 	
 	public static void printUsage_ArcUnpack(){
@@ -70,8 +73,6 @@ public class Main {
 		System.err.println("--arcspec\t\t[Path to xml file containing info about arc/stream contents]");
 		System.err.println("--xmlout\t\t[Path to xml file output]");
 		System.err.println("--log\t\t[Path to log file output (Defaults to stderr)]");
-		//System.err.println("-png\t\t[FLAG - If set, also convert any present images to png.]");
-		//Spec files are xmls
 	}
 	
 	private static void main_arcUnpack(Map<String, String> args, String rel_path) throws IOException{
