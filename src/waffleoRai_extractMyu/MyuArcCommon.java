@@ -71,9 +71,11 @@ public class MyuArcCommon {
 	
 	private static LiteNode readXMLNode(LiteNode parent, Element xml_node){
 		if(xml_node == null) return null;
-		LiteNode me = new LiteNode();
-		me.parent = parent;
-		parent.children.add(me);
+		LiteNode me = null;
+		if(parent != null) {
+			me = parent.newChild("");
+		}
+		else me = new LiteNode();
 		
 		me.name = xml_node.getNodeName();
 		me.value = xml_node.getNodeValue();
@@ -99,17 +101,9 @@ public class MyuArcCommon {
 		try{
 			Document xmldoc = XMLReader.readXMLStatic(xmlpath);
 			Node root = xmldoc.getFirstChild();
-			LiteNode outroot = new LiteNode();
-			
-			outroot.name = root.getNodeName();
-			NodeList children = root.getChildNodes();
-			int ccount = children.getLength();
-			for(int i = 0; i < ccount; i++){
-				Node n = children.item(i);
-				if(n.getNodeType() == Node.ELEMENT_NODE){
-					Element child = (Element)n;
-					readXMLNode(outroot, child);
-				}
+			LiteNode outroot = null;
+			if(root.getNodeType() == Node.ELEMENT_NODE) {
+				outroot = readXMLNode(null, (Element)root);
 			}
 			return outroot;
 		}
@@ -126,6 +120,7 @@ public class MyuArcCommon {
 			bw.write("<" + node.name);
 			if(!node.attr.isEmpty()){
 				List<String> attrk = new ArrayList<String>(node.attr.size()+1);
+				attrk.addAll(node.attr.keySet());
 				Collections.sort(attrk);
 				for(String key : attrk){
 					bw.write(" " + key + "=\"");
@@ -149,6 +144,7 @@ public class MyuArcCommon {
 			bw.write("<" + node.name);
 			if(!node.attr.isEmpty()){
 				List<String> attrk = new ArrayList<String>(node.attr.size()+1);
+				attrk.addAll(node.attr.keySet());
 				Collections.sort(attrk);
 				for(String key : attrk){
 					bw.write(" " + key + "=\"");
@@ -157,7 +153,7 @@ public class MyuArcCommon {
 				}
 			}
 			if(node.value != null){
-				bw.write(">" + node.value + "</" + node.name + ">");
+				bw.write(">\"" + node.value + "\"</" + node.name + ">");
 			}
 			else bw.write("/>");
 			bw.write("\n");

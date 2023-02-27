@@ -58,8 +58,16 @@ public class MyuSoundbankFile {
 			
 			long cpos = 12;
 			for(int i = 0; i < seq_count; i++){
-				seq_locs[i] = rawdata.intFromFile(cpos) + (int)cpos;
-				cpos += 4;
+				int val = rawdata.intFromFile(cpos);
+				if(val == 0) {
+					seq_locs[i] = vh_off;
+					seq_count = i;
+					break;
+				}
+				else {
+					seq_locs[i] = val + (int)cpos;
+					cpos += 4;
+				}
 			}
 		}
 		
@@ -68,6 +76,7 @@ public class MyuSoundbankFile {
 			if(i < (seq_count - 1)){
 				endpos = seq_locs[i+1];
 			}
+			if(seq_locs[i] >= endpos) continue;
 			FileBuffer sub = rawdata.createReadOnlyCopy(seq_locs[i], endpos);
 			sbf.sequences[i] = new SEQP(sub, 0);
 			sub.dispose();

@@ -2,6 +2,8 @@ package waffleoRai_extractMyu;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -87,6 +89,21 @@ public class Main {
 					"Input file \"" + input_path + "\" does not exist!");
 			return;
 		}
+		
+		MyuPackagerLogger.logMessage("Main.main_arcUnpack", 
+				"input_path = " + input_path);
+		MyuPackagerLogger.logMessage("Main.main_arcUnpack", 
+				"output_dir = " + output_dir);
+		MyuPackagerLogger.logMessage("Main.main_arcUnpack", 
+				"spec_path = " + spec_path);
+		MyuPackagerLogger.logMessage("Main.main_arcUnpack", 
+				"xml_path = " + xml_path);
+		
+		if(!FileBuffer.directoryExists(output_dir)) {
+			MyuPackagerLogger.logMessage("Main.main_arcUnpack", 
+					"Output directory did not exist. Creating...");
+			Files.createDirectories(Paths.get(output_dir));
+		}
 
 		//Read offset table
 		FileBuffer arcdata = FileBuffer.createBuffer(input_path, false);
@@ -105,11 +122,20 @@ public class Main {
 		boolean lz_flag = false;
 		ArrayList<LiteNode> import_files = new ArrayList<LiteNode>(file_count+1);
 		
+		if(arcname == null){
+			arcname = input_path.substring(input_path.lastIndexOf(File.separatorChar) + 1);
+			arcname = arcname.replace("D_", "");
+			arcname = arcname.substring(0, arcname.indexOf('.'));
+		}
+		String arcname_c = StringUtils.capitalize(arcname.toLowerCase());
+		
 		MyuPackagerLogger.logMessage("Main.main_arcUnpack", 
 				"Importing archive specs...");
 		if(FileBuffer.fileExists(spec_path)){
 			LiteNode arcspec = MyuArcCommon.readXML(spec_path);
 			arcname = arcspec.attr.get("Name");
+			
+			arcname_c = StringUtils.capitalize(arcname.toLowerCase());
 			if(arcspec != null && arcspec.children != null){
 				for(LiteNode child : arcspec.children){
 					if(child.name.equals("ArcFile")) import_files.add(child);
@@ -135,9 +161,6 @@ public class Main {
 					"Archive spec xml read!");
 		}
 		else{
-			arcname = input_path.substring(input_path.lastIndexOf(File.separatorChar));
-			arcname = arcname.substring(0, arcname.indexOf('.'));
-			String arcname_c = StringUtils.capitalize(arcname);
 			for(int i = 0; i < file_count; i++){
 				LiteNode child = new LiteNode();
 				import_files.add(child);
@@ -152,10 +175,6 @@ public class Main {
 		}
 		
 		//Process arcname
-		if(arcname == null){
-			arcname = input_path.substring(input_path.lastIndexOf(File.separatorChar));
-			arcname = arcname.substring(0, arcname.indexOf('.'));
-		}
 		if(arcname.length() > 8){
 			arcname = arcname.substring(0,8);
 		}
@@ -163,7 +182,7 @@ public class Main {
 		LiteNode export_root = new LiteNode();
 		export_root.name = "MyuArchive";
 		export_root.attr.put("Name", arcname.toUpperCase());
-		export_root.attr.put("Enum", "D_" + StringUtils.capitalize(arcname.toLowerCase()));
+		export_root.attr.put("Enum", "D_" + arcname_c);
 		export_root.attr.put(MyupkgConstants.XML_ATTR_ACCBYFI, StringUtils.capitalize(Boolean.toString(idx_flag)));
 		export_root.attr.put(MyupkgConstants.XML_ATTR_HASAUDIO, StringUtils.capitalize(Boolean.toString(audio_flag)));
 		export_root.attr.put(MyupkgConstants.XML_ATTR_ASTREAM, StringUtils.capitalize(Boolean.toString(xa_a_flag)));
@@ -181,6 +200,9 @@ public class Main {
 			else{
 				filesize = (int)(arcdata.getFileSize() - offset_table[i]);
 			}
+			
+			MyuPackagerLogger.logMessage("Main.main_arcUnpack", 
+					"Processing file " + i + "...");
 			
 			//Don't forget to add node even if empty.
 			LiteNode f_exp = new LiteNode();
