@@ -1,11 +1,17 @@
 package waffleoRai_extractMyu;
 
+import java.io.BufferedReader;
 import java.io.BufferedWriter;
+import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Collections;
+import java.util.GregorianCalendar;
 import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 
@@ -16,6 +22,8 @@ import org.w3c.dom.NodeList;
 
 import waffleoRai_Compression.lz77.LZMu;
 import waffleoRai_Compression.lz77.LZMu.LZMuDef;
+import waffleoRai_Containers.CDDateTime;
+import waffleoRai_Containers.ISOXAImage;
 import waffleoRai_Files.XMLReader;
 import waffleoRai_Utils.FileBuffer;
 import waffleoRai_Utils.FileBufferStreamer;
@@ -167,6 +175,20 @@ public class MyuArcCommon {
 		bw.close();
 	}
 	
+	public static ISOXAImage readISOFile(String isopath) {
+		//TODO
+		//If you just give it the bin image, it will assume...
+		// > That it contains the sector header and error correction (0x930 byte sectors)
+		
+		//It won't assume track 2 (the CDDA file) is either present or absent. It will check the size of the input image.
+		return null;
+	}
+	
+	public static String findBIN_fromCUE(String cuepath) {
+		//TODO
+		return null;
+	}
+	
 	public static FileBuffer lzDecompress(FileBuffer indata){
 		int decsize = indata.intFromFile(0L);
 		FileBuffer outdata = new FileBuffer(decsize, false);
@@ -177,4 +199,58 @@ public class MyuArcCommon {
 		return outdata;
 	}
 
+	public static String[][] loadChecksumTable(String path) throws IOException {
+		List<String> lines = new LinkedList<String>();
+		if(!FileBuffer.fileExists(path)) return null;
+		BufferedReader br = new BufferedReader(new FileReader(path));
+		String line = null;
+		while((line = br.readLine()) != null) {
+			if(line.isEmpty()) continue;
+			if(line.startsWith("#")) continue;
+			lines.add(line);
+		}
+		br.close();
+		
+		int ecount = lines.size();
+		if(ecount < 1) return null;
+		String[][] tbl = new String[ecount][3];
+		int i = 0;
+		for(String l : lines) {
+			String[] fields = l.split(",");
+			for(int j = 0; j < fields.length; j++) {
+				if(j >= 3) break;
+				tbl[i][j] = fields[j];
+				
+				if(j == 2) tbl[i][j] = tbl[i][j].toUpperCase();
+			}
+		}
+		
+		return tbl;
+	}
+	
+	public static String datetime2XMLVal(CDDateTime timestamp) {
+		StringBuilder sb = new StringBuilder(128);
+		sb.append(String.format("%04d/", timestamp.getYear()));
+		sb.append(String.format("%02d/", timestamp.getMonth()));
+		sb.append(String.format("%02d ", timestamp.getDay()));
+		sb.append(String.format("%02d:", timestamp.getHour()));
+		sb.append(String.format("%02d:", timestamp.getMinute()));
+		sb.append(String.format("%02d:", timestamp.getSecond()));
+		sb.append(String.format("%02d ", timestamp.getFrame()));
+		int tz = timestamp.getTimezone();
+		if(tz > 0) sb.append("+");
+		else if(tz < 0) sb.append("-");
+		sb.append(Integer.toString(tz));
+		
+		return sb.toString();
+	}
+	
+	public static String localPath2UnixRel(String ref_path, String trg_path) {
+		//TODO
+		//Unix style relative path for trg_path relative to ref_path
+		//if ref_path is a file, strip to parent directory
+		
+		return null;
+	}
+	
 }

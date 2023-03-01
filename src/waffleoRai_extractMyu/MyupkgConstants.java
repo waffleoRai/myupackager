@@ -19,7 +19,17 @@ public class MyupkgConstants {
 	public static final String XML_ATTR_YSCALE = "YFactor";
 	public static final String XML_ATTR_CLUTIDX = "ClutIndex";
 	
+	public static final String XML_ATTR_VOLUMEID = "VolId";
+	public static final String XML_ATTR_PUBID = "PublisherId";
+	public static final String XML_ATTR_FAKETIME = "ForgeTimestamp"; //Use for both created and modified
+	public static final String XML_ATTR_REGION = "Region";
+	public static final String XML_ATTR_MATCHMODE = "AttemptMatch"; //If set to "True" will use forged timestamps and forced sector starts.
+	public static final String XML_ATTR_STARTSEC = "StartSector";
+	
 	public static final String XML_NODENAME_SUBFILE = "SubFile";
+	public static final String XML_NODENAME_ISOBUILD = "IsoBuild";
+	public static final String XML_NODENAME_PATHTABLE = "PathTable";
+	public static final String XML_NODENAME_PSLOGO = "PSLogo";
 	
 	public static final String ASSET_TYPE_CLUT = "Clut";
 	public static final String ASSET_TYPE_IMAGE = "Image";
@@ -34,5 +44,7 @@ public class MyupkgConstants {
 	public static final String FTYPE_SEQ = "Soundseq";
 	public static final String FTYPE_SBNK = "Soundbank";
 	public static final String FTYPE_IBNK = "Imagebank";
+	
+	public static final String FILENAME_PSLOGO = "pslogo.bin";
 
 }

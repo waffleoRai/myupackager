@@ -4,11 +4,15 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 
+import waffleoRai_Containers.ISOXAImage;
 import waffleoRai_Utils.FileBuffer;
+import waffleoRai_Utils.FileUtils;
+import waffleoRai_Utils.MultiFileBuffer;
 import waffleoRai_Utils.StringUtils;
 
 public class Main {
@@ -17,6 +21,9 @@ public class Main {
 	public static final String TOOLNAME_UNPACK_ARC = "arcunpack";
 	public static final String TOOLNAME_PACK_ARC = "arcpack";
 	public static final String TOOLNAME_PACK_ISO = "isopack";
+	public static final String TOOLNAME_GLUE_TRACKS = "gluetracks"; //Glues together a track 1 image and track 2 image into a single CD image.
+	
+	//For rebuild, have option to omit the CD-DA track 2 data (though the directory entry has to be there for matching)
 	
 	private static Map<String, String> parseargs(String[] args){
 		Map<String, String> map = new HashMap<String, String>();
@@ -62,6 +69,8 @@ public class Main {
 		System.err.println("--cdout\t\t[Path to directory to place extracted CD contents]");
 		System.err.println("--assetout\t\t[Path to directory to place extracted assets]");
 		System.err.println("--arcspec\t\t[Path to directory containing tables w/ file info for archives (file info, VOICE ptr table etc.)]");
+		System.err.println("--checksums\t\t[Path to csv containing checksums for vanilla game files]");
+		System.err.println("--xmlout\t\t[Path to xml file output]");
 		System.err.println("--log\t\t[Path to log file output (Defaults to stderr)]");
 	}
 	
@@ -75,6 +84,183 @@ public class Main {
 		System.err.println("--log\t\t[Path to log file output (Defaults to stderr)]");
 	}
 	
+	private static void main_isoUnpack(Map<String, String> args) throws IOException{
+		//TODO
+		String input_path = args.get("iso");
+		String output_dir_cd = args.get("cdout");
+		String output_dir_asset = args.get("assetout");
+		String spec_path = args.get("arcspec"); //Arcspec dir
+		String xml_path = args.get("xmlout");
+		String checksum_path = args.get("checksums");
+		
+		//--- Check paths
+		boolean is_cue = false;
+		if(input_path == null) {
+			//Check for cue sheet instead
+			input_path = args.get("cue");
+			is_cue = true;
+			if(input_path == null){
+				MyuPackagerLogger.logMessage("Main.main_isoUnpack", 
+						"Input file argument is required!");
+				return;
+			}
+			if(!FileBuffer.fileExists(input_path)){
+				MyuPackagerLogger.logMessage("Main.main_isoUnpack", 
+						"Input file \"" + input_path + "\" does not exist!");
+				return;
+			}
+		}
+		
+		String input_dir = input_path.substring(0, input_path.lastIndexOf(File.separatorChar));
+		
+		if(output_dir_cd == null) {
+			output_dir_cd = input_dir + File.separator + "cd";
+			MyuPackagerLogger.logMessage("Main.main_isoUnpack", 
+					"CD files directory was not provided. Creating directory in input folder (" + output_dir_cd + ")");
+		}
+		if(output_dir_asset == null) {
+			output_dir_asset = input_dir + File.separator + "assets";
+			MyuPackagerLogger.logMessage("Main.main_isoUnpack", 
+					"Assets directory was not provided. Creating directory in input folder (" + output_dir_asset + ")");
+		}
+		
+		if(!FileBuffer.directoryExists(output_dir_cd)) {
+			Files.createDirectories(Paths.get(output_dir_cd));
+		}
+		if(!FileBuffer.directoryExists(output_dir_asset)) {
+			Files.createDirectories(Paths.get(output_dir_asset));
+		}
+		
+		if((checksum_path == null) || (!FileBuffer.fileExists(checksum_path))) {
+			checksum_path = input_path + File.separator + "checksums.csv";
+			MyuPackagerLogger.logMessage("Main.main_isoUnpack", 
+					"Checksum table path was not provided, or table does not exist. Setting to " + checksum_path);
+		}
+		
+		//Read CUE file to find actual binary, if applicable
+		if(is_cue) {
+			MyuPackagerLogger.logMessage("Main.main_isoUnpack", 
+					"Attempting to find image binary from CUE file \"" + input_path + "\"");
+			input_path = MyuArcCommon.findBIN_fromCUE(input_path);
+			if(input_path == null) {
+				MyuPackagerLogger.logMessage("Main.main_isoUnpack", 
+						"Image BIN could not be found! Returning...");
+				return;
+			}
+		}
+		
+		//--- Input image checksum (if checksums provided)
+		//Here, this is mostly for warning the user if provided image is heretofore unknown and results may not be as they expect.
+		String[][] checksums = MyuArcCommon.loadChecksumTable(checksum_path); //Returns null if file doesn't exist.
+		if(checksums != null) {
+			try {
+				MyuPackagerLogger.logMessage("Main.main_isoUnpack", 
+						"Calculating SHA-256 of input image...");
+				byte[] in_sha = FileBuffer.getFileHash("SHA-256", input_path);
+				String shastr = FileUtils.bytes2str(in_sha);
+				shastr = shastr.toUpperCase();
+				MyuPackagerLogger.logMessage("Main.main_isoUnpack", 
+						"Hash: " + shastr);
+				
+				//Check for match
+				boolean found = false;
+				for(int i = 0; i < checksums.length; i++) {
+					if(checksums[i][0] == null) continue;
+					if(checksums[i][2] == null) continue;
+					if(!checksums[i][0].equalsIgnoreCase("ISO")) continue;
+					if(checksums[i][2].equals(shastr)) {
+						MyuPackagerLogger.logMessage("Main.main_isoUnpack", 
+								"Image match found: " + checksums[i][1]);
+						found = true;
+						break;
+					}
+				}
+				
+				if(!found) {
+					MyuPackagerLogger.logMessage("Main.main_isoUnpack", 
+							"WARNING: No match was found to known image. Unpack will continue, but be aware that the results will be unpredictable.");
+				}
+				
+			} catch (NoSuchAlgorithmException e) {
+				MyuPackagerLogger.logMessage("Main.main_isoUnpack", 
+						"Input file hash failed: internal error (see stack trace)");
+				e.printStackTrace();
+			} catch (IOException e) {
+				MyuPackagerLogger.logMessage("Main.main_isoUnpack", 
+						"Input file hash failed: I/O error (see stack trace)");
+				e.printStackTrace();
+			}
+		}
+		else {
+			MyuPackagerLogger.logMessage("Main.main_isoUnpack", 
+					"Checksum table could not be loaded. Skipping input image checksum...");
+		}
+		
+		//Attempt to read CD image
+		ISOXAImage cd_image = MyuArcCommon.readISOFile(input_path);
+		
+		//start output XML for CD build
+		if(xml_path == null) {
+			xml_path = input_dir + File.separator + "buildiso.xml";
+			MyuPackagerLogger.logMessage("Main.main_isoUnpack", 
+					"Output XML path was not provided. Setting to \"" + xml_path + "\"");
+		}
+		LiteNode cdbuild_root = new LiteNode();
+		cdbuild_root.name = MyupkgConstants.XML_NODENAME_ISOBUILD;
+		
+		//Generate relative paths for XML use
+		String cddir_rel = MyuArcCommon.localPath2UnixRel(xml_path, output_dir_cd);
+		String assetdir_rel = MyuArcCommon.localPath2UnixRel(xml_path, output_dir_asset);
+		
+		//Get metadata from CD
+		cdbuild_root.attr.put(MyupkgConstants.XML_ATTR_VOLUMEID, cd_image.getVolumeIdent());
+		cdbuild_root.attr.put(MyupkgConstants.XML_ATTR_PUBID, cd_image.getPublisherIdent());
+		cdbuild_root.attr.put(MyupkgConstants.XML_ATTR_REGION, "J");
+		cdbuild_root.attr.put(MyupkgConstants.XML_ATTR_MATCHMODE, "True");
+		cdbuild_root.attr.put(MyupkgConstants.XML_ATTR_FAKETIME, MyuArcCommon.datetime2XMLVal(cd_image.getDateCreated()));
+		
+		//Extract PSLogo sectors (5-11)
+		FileBuffer pslogo = new MultiFileBuffer(7);
+		for(int i = 0; i < 7; i++) {
+			pslogo.addToFile(cd_image.getSectorData(i+5));
+		}
+		String pslogo_path = output_dir_cd + File.separator + MyupkgConstants.FILENAME_PSLOGO;
+		pslogo.writeFile(pslogo_path);
+		pslogo.dispose();
+		LiteNode childnode = cdbuild_root.newChild(MyupkgConstants.XML_NODENAME_PSLOGO);
+		childnode.value = cddir_rel + "/" + MyupkgConstants.FILENAME_PSLOGO;
+		
+		//Note path tables
+		int ptstart = cd_image.getPathTable_1_start();
+		LiteNode ptnode = cdbuild_root.newChild(MyupkgConstants.XML_NODENAME_PATHTABLE);
+		if(ptstart > 0) {
+			ptnode.attr.put(MyupkgConstants.XML_ATTR_STARTSEC, Integer.toString(ptstart));
+		}
+		ptstart = cd_image.getPathTable_2_start();
+		ptnode = cdbuild_root.newChild(MyupkgConstants.XML_NODENAME_PATHTABLE);
+		if(ptstart > 0) {
+			ptnode.attr.put(MyupkgConstants.XML_ATTR_STARTSEC, Integer.toString(ptstart));
+		}
+		ptstart = cd_image.getPathTable_3_start();
+		ptnode = cdbuild_root.newChild(MyupkgConstants.XML_NODENAME_PATHTABLE);
+		if(ptstart > 0) {
+			ptnode.attr.put(MyupkgConstants.XML_ATTR_STARTSEC, Integer.toString(ptstart));
+		}
+		ptstart = cd_image.getPathTable_4_start();
+		ptnode = cdbuild_root.newChild(MyupkgConstants.XML_NODENAME_PATHTABLE);
+		if(ptstart > 0) {
+			ptnode.attr.put(MyupkgConstants.XML_ATTR_STARTSEC, Integer.toString(ptstart));
+		}
+		
+		//Get file table from CD (need to annotate file locations and metadata)
+		//Extract sectors that are non-zero and not used by the filesystem(?)
+		//Render file tree from CD and extract those files to cd out dir (note that track 2 might not be where it's supposed to be - CUE sheet can specify if present)
+		
+		//Run the arc extractors on the archives and streams. (Exe disassembly is handled externally)
+		//Clean up ARC bins in cddir that are successfully broken down
+		
+	}
+	
 	private static void main_arcUnpack(Map<String, String> args, String rel_path) throws IOException{
 		String input_path = args.get("input");
 		String output_dir = args.get("output");
@@ -85,6 +271,11 @@ public class Main {
 		if(args.containsKey("png")) flags |= MyupkgConstants.PKGR_FLAG_PNGOUT;
 		
 		//Check path existences
+		if(input_path == null){
+			MyuPackagerLogger.logMessage("Main.main_arcUnpack", 
+					"Input file argument is required!");
+			return;
+		}
 		if(!FileBuffer.fileExists(input_path)){
 			MyuPackagerLogger.logMessage("Main.main_arcUnpack", 
 					"Input file \"" + input_path + "\" does not exist!");
@@ -242,6 +433,10 @@ public class Main {
 			xml_path = output_dir + File.separator + arcname.toLowerCase() + ".xml";
 		}
 		MyuArcCommon.writeXML(xml_path, export_root);
+	}
+	
+	private static void main_glueTracks(Map<String, String> args) throws IOException{
+		//TODO
 	}
 
 	public static void main(String[] args) {
