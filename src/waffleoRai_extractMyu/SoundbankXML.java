@@ -1,8 +1,11 @@
 package waffleoRai_extractMyu;
 
+import java.util.HashMap;
 import java.util.Map;
 
 import waffleoRai_soundbank.vab.PSXVAB;
+import waffleoRai_soundbank.vab.VABProgram;
+import waffleoRai_soundbank.vab.VABTone;
 
 public class SoundbankXML {
 	
@@ -32,7 +35,7 @@ public class SoundbankXML {
 	public static final String XML_VABATTR_PPRI = "Priority";
 	public static final String XML_VABATTR_PMODE = "Mode";
 	public static final String XML_VABATTR_PATTR = "ProgAttr";
-	public static final String XML_VABATTR_PIDX = "ProgIndex"; //MyuPkg doesn't need this, this is more for the user.
+	public static final String XML_VABATTR_PIDX = "ProgIndex";
 	
 	public static final String XML_VABATTR_TVOL = "Volume";
 	public static final String XML_VABATTR_TPAN = "Pan";
@@ -66,6 +69,14 @@ public class SoundbankXML {
 	public static final String XML_VABATTR_ADSR_DTYPE_UP = "Increase";
 	public static final String XML_VABATTR_ADSR_DTYPE_DOWN = "Decrease";
 	
+	public static LiteNode getFirstChildWithName(LiteNode node, String name) {
+		if(node == null || name == null) return null;
+		for(LiteNode child : node.children) {
+			if(name.equals(child.name)) return child;
+		}
+		return null;
+	}
+	
 	public static LiteNode exportSoundbankHead(PSXVAB vab, String[] sampleNames){
 		LiteNode node = new LiteNode();
 		node.name = XML_VABNODE_VH;
@@ -86,7 +97,7 @@ public class SoundbankXML {
 			prog_node.name = XML_VABNODE_PROG;
 			
 			//Program-wide stuff
-			PSXVAB.Program program = vab.getProgram(i);
+			VABProgram program = vab.getProgram(i);
 			if(program == null) continue;
 			prog_node.attr.put(XML_VABATTR_PIDX, Integer.toString(i));
 			prog_node.attr.put(XML_VABATTR_PVOL, Integer.toString(program.getVolume()));
@@ -103,7 +114,7 @@ public class SoundbankXML {
 				tone_node.name = XML_VABNODE_TONE;
 				
 				//Main tone attr
-				PSXVAB.Tone tone = program.getTone(j);
+				VABTone tone = program.getTone(j);
 				if(tone == null) continue;
 				tone_node.attr.put(XML_VABATTR_TVOL, Integer.toString(tone.getVolume()));
 				tone_node.attr.put(XML_VABATTR_TPAN, Integer.toString(tone.getPan()));
@@ -115,7 +126,7 @@ public class SoundbankXML {
 					tone_node.attr.put(XML_VABATTR_TMODE, "0x00");
 				}
 				
-				int sampleidx = tone.getSampleIndex();
+				int sampleidx = tone.getSampleIndex() - 1;
 				if(sampleNames != null){
 					tone_node.attr.put(XML_VABATTR_TSAMPLE, sampleNames[sampleidx]);
 				} else{
@@ -191,10 +202,133 @@ public class SoundbankXML {
 		return node;
 	}
 
-	public static PSXVAB importSoundbankHead(LiteNode node, Map<String, MyuSoundSample> sampleMap){
-		//TODO
+	private static void readToneNode(LiteNode toneNode, VABTone dst) {
+		if(toneNode == null || dst == null) return;
+		
+		String aval = toneNode.attr.get(XML_VABATTR_TVOL);
+		if(aval != null) dst.setVolume(Integer.parseInt(aval));
+		aval = toneNode.attr.get(XML_VABATTR_TPAN);
+		if(aval != null) dst.setPan(Integer.parseInt(aval));
+		aval = toneNode.attr.get(XML_VABATTR_TPRI);
+		if(aval != null) dst.setPriority(Integer.parseInt(aval));
+		
+		aval = toneNode.attr.get(XML_VABATTR_TMODE);
+		if(aval != null) {
+			int val = 0;
+			if(aval.startsWith("0x")) val = Integer.parseInt(aval.substring(2), 16);
+			else val = Integer.parseInt(aval);
+			dst.setReverb(val != 0);
+		}
+		
+		LiteNode child = getFirstChildWithName(toneNode, XML_VABNODE_TUNING);
+		if(child != null) {
+			aval = child.attr.get(XML_VABATTR_TUNITYKEY);
+			if(aval != null) dst.setUnityKey(Integer.parseInt(aval));
+			aval = child.attr.get(XML_VABATTR_TPITCHTUNE);
+			if(aval != null) dst.setFineTune256(Integer.parseInt(aval));
+			
+			int minNote = 0; int maxNote = 127;
+			aval = child.attr.get(XML_VABATTR_TNOTEMIN);
+			if(aval != null) minNote = Integer.parseInt(aval);
+			aval = child.attr.get(XML_VABATTR_TNOTEMAX);
+			if(aval != null) maxNote = Integer.parseInt(aval);
+			dst.setKeyRange(minNote, maxNote);
+			
+			int min = 2; int max = 2;
+			aval = child.attr.get(XML_VABATTR_TPBMIN);
+			if(aval != null) min = Integer.parseInt(aval);
+			aval = child.attr.get(XML_VABATTR_TPBMAX);
+			if(aval != null) max = Integer.parseInt(aval);
+			dst.setPitchBend(min, max);
+		}
+		
+		child = getFirstChildWithName(toneNode, XML_VABNODE_VIB);
+		if(child != null) {
+			int w = 0; int t = 0;
+			aval = child.attr.get(XML_VABATTR_TVIBWIDTH);
+			if(aval != null) w = Integer.parseInt(aval);
+			aval = child.attr.get(XML_VABATTR_TVIBTIME);
+			if(aval != null) t = Integer.parseInt(aval);
+			
+			dst.setVibrato(w, t);
+		}
+		
+		child = getFirstChildWithName(toneNode, XML_VABNODE_PORTA);
+		if(child != null) {
+			int w = 0; int t = 0;
+			aval = child.attr.get(XML_VABATTR_TPORTWIDTH);
+			if(aval != null) w = Integer.parseInt(aval);
+			aval = child.attr.get(XML_VABATTR_TPORTTIME);
+			if(aval != null) t = Integer.parseInt(aval);
+			
+			dst.setPortamento(w, t);
+		}
+		
+		child = getFirstChildWithName(toneNode, XML_VABNODE_ADSR);
+		if(child != null) {
+			LiteNode gchild = getFirstChildWithName(child, XML_VABATTR_ATTACK);
+			if(gchild != null) {
+				String mode = gchild.attr.get(XML_VABATTR_ADSR_MODE);
+				int am = 0;
+				if(mode != null && mode.equals(XML_VABATTR_ADSR_MTYPE_PEXP)) am = 1;
+				
+				int shift = 0; int step = 0;
+				aval = gchild.attr.get(XML_VABATTR_ADSR_STEP);
+				if(aval != null) step = Integer.parseInt(aval);
+				aval = gchild.attr.get(XML_VABATTR_ADSR_SHIFT);
+				if(aval != null) shift = Integer.parseInt(aval);
+				
+				dst.setAttack(am != 0, shift, step);
+			}
+			
+			gchild = getFirstChildWithName(child, XML_VABATTR_DECAY);
+			if(gchild != null) {
+				int shift = 0;
+				aval = gchild.attr.get(XML_VABATTR_ADSR_SHIFT);
+				if(aval != null) shift = Integer.parseInt(aval);
+				
+				dst.setDecay(shift);
+			}
+			
+			gchild = getFirstChildWithName(child, XML_VABATTR_SUSTAIN);
+			if(gchild != null) {
+				String modestr = gchild.attr.get(XML_VABATTR_ADSR_MODE);
+				boolean mode = false;
+				if(modestr != null && (modestr.equals(XML_VABATTR_ADSR_MTYPE_PEXP) || (modestr.equals(XML_VABATTR_ADSR_MTYPE_EXP)))) mode = true;
+				String dirstr = gchild.attr.get(XML_VABATTR_ADSR_DIR);
+				boolean dir = false;
+				if(dirstr != null && dirstr.equals(XML_VABATTR_ADSR_DTYPE_DOWN)) dir = true;
+				
+				int shift = 0; int step = 0; int level = 0;
+				aval = gchild.attr.get(XML_VABATTR_ADSR_STEP);
+				if(aval != null) step = Integer.parseInt(aval);
+				aval = gchild.attr.get(XML_VABATTR_ADSR_SHIFT);
+				if(aval != null) shift = Integer.parseInt(aval);
+				aval = gchild.attr.get(XML_VABATTR_ADSR_LEVEL);
+				if(aval != null) level = Integer.parseInt(aval);
+				
+				dst.setSustainRate(mode, shift, step, dir);
+				dst.setSustainLevel(level);
+			}
+			
+			gchild = getFirstChildWithName(child, XML_VABATTR_RELEASE);
+			if(gchild != null) {
+				String mstr = gchild.attr.get(XML_VABATTR_ADSR_MODE);
+				boolean mode = false;
+				if(mstr != null && mstr.equals(XML_VABATTR_ADSR_MTYPE_EXP)) mode = true;
+				
+				int shift = 0;
+				aval = gchild.attr.get(XML_VABATTR_ADSR_SHIFT);
+				if(aval != null) shift = Integer.parseInt(aval);
+				
+				dst.setRelease(mode, shift);
+			}
+		}
+	}
+	
+	public static PSXVAB importSoundbankHead(LiteNode headNode, Map<String, MyuSoundSample> sampleMap){
 		int ival = 0;
-		String aval = node.attr.get(XML_VABATTR_VABID);
+		String aval = headNode.attr.get(XML_VABATTR_VABID);
 		if(aval != null){
 			try{ival = Integer.parseInt(aval);}
 			catch(NumberFormatException ex){ex.printStackTrace();}
@@ -203,14 +337,98 @@ public class SoundbankXML {
 		PSXVAB vab = new PSXVAB(ival);
 		try{
 			//VAB header common fields
+			aval = headNode.attr.get(XML_VABATTR_VER);
+			if(aval != null) {vab.setVersion(Integer.parseInt(aval));}
+			
+			aval = headNode.attr.get(XML_VABATTR_MVOL);
+			if(aval != null) {vab.setMasterVolume(Byte.parseByte(aval));}
+			
+			aval = headNode.attr.get(XML_VABATTR_MPAN);
+			if(aval != null) {vab.setMasterPan(Byte.parseByte(aval));}
+			
+			aval = headNode.attr.get(XML_VABATTR_BANKATTR1);
+			if(aval != null) {vab.setBankAttr1(Byte.parseByte(aval));}
+			
+			aval = headNode.attr.get(XML_VABATTR_BANKATTR2);
+			if(aval != null) {vab.setBankAttr2(Byte.parseByte(aval));}
 			
 			//Go through program child nodes...
+			for(LiteNode child : headNode.children) {
+				if(child.name == null) continue;
+				if(child.name.equals(XML_VABNODE_PROG)) {
+					if(!child.attr.isEmpty()) {
+						int p = 0;
+						aval = child.attr.get(XML_VABATTR_PIDX);
+						if(aval != null) {p = Integer.parseInt(aval);}
+						
+						VABProgram program = vab.newProgram(p);
+						aval = child.attr.get(XML_VABATTR_PVOL);
+						if(aval != null) {program.setVolume(Integer.parseInt(aval));}
+						aval = child.attr.get(XML_VABATTR_PPAN);
+						if(aval != null) {program.setPan(Integer.parseInt(aval));}
+						aval = child.attr.get(XML_VABATTR_PPRI);
+						if(aval != null) {program.setPriority(Integer.parseInt(aval));}
+						aval = child.attr.get(XML_VABATTR_PATTR);
+						if(aval != null) {program.setAttribute(Integer.parseInt(aval));}
+						
+						aval = child.attr.get(XML_VABATTR_PMODE);
+						if(aval != null) {
+							if(aval.startsWith("0x")) {
+								program.setMode(Integer.parseInt(aval.substring(2), 16));
+							}
+							else program.setMode(Integer.parseInt(aval));
+						}
+						
+						//Tones
+						int t = 0;
+						for(LiteNode gchild : child.children) {
+							if(gchild.name == null) continue;
+							if(gchild.name.equals(XML_VABNODE_TONE)) {
+								if(!gchild.attr.isEmpty()) {
+									VABTone tone = new VABTone(t);
+									readToneNode(gchild, tone);
+									tone.setParentProgram(p);
+									
+									String sampleName = gchild.attr.get(XML_VABATTR_TSAMPLE);
+									if(sampleName != null) {
+										MyuSoundSample smp = sampleMap.get(sampleName);
+										if(smp != null) tone.setSampleIndex(smp.getIndex()+1);
+									}
+									program.setTone(tone, t);
+								}
+								t++;
+							}
+						}
+					}
+				}
+			}
+			
 		}
 		catch(Exception ex){
 			ex.printStackTrace();
 		}
 		
-		return null;
+		return vab;
+	}
+
+	public static Map<String, MyuSoundSample> importSoundbankBody(LiteNode bodyNode) {
+		Map<String, MyuSoundSample> sampleMap = new HashMap<String, MyuSoundSample>();
+		if(bodyNode == null) return sampleMap;
+		
+		int i = 0;
+		for(LiteNode child : bodyNode.children) {
+			if(child.name == null) continue;
+			if(!child.name.equals(MyupkgConstants.ASSET_TYPE_SOUNDSAMP)) continue;
+			MyuSoundSample smpl = new MyuSoundSample();
+			smpl.setIndex(i);
+			smpl.setName(child.attr.get(XML_VABATTR_SAMPNAME));
+			smpl.setRelPath(child.value);
+			
+			sampleMap.put(smpl.getName(), smpl);
+			i++;
+		}
+		
+		return sampleMap;
 	}
 	
 }

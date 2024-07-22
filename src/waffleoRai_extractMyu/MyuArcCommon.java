@@ -2,14 +2,12 @@ package waffleoRai_extractMyu;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
+import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.time.ZonedDateTime;
 import java.util.ArrayList;
-import java.util.Calendar;
 import java.util.Collections;
-import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
@@ -21,15 +19,21 @@ import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 
 import waffleoRai_Compression.lz77.LZMu;
-import waffleoRai_Compression.lz77.LZMu.LZMuDef;
 import waffleoRai_Containers.CDDateTime;
+import waffleoRai_Containers.CDTable.CDInvalidRecordException;
+import waffleoRai_Containers.ISO;
 import waffleoRai_Containers.ISOXAImage;
 import waffleoRai_Files.XMLReader;
 import waffleoRai_Utils.FileBuffer;
+import waffleoRai_Utils.FileBuffer.UnsupportedFileTypeException;
 import waffleoRai_Utils.FileBufferStreamer;
-import waffleoRai_Utils.StreamWrapper;
+import waffleoRai_Utils.MultiFileBuffer;
 
 public class MyuArcCommon {
+	
+	public static final int COMPR_MODE_FASTEST = 1;
+	public static final int COMPR_MODE_SMALL = 4;
+	public static final int COMPR_MODE_FFL = 127;
 	
 	private static Map<String, TypeHandler> callback_map;
 	
@@ -54,10 +58,24 @@ public class MyuArcCommon {
 		}
 		else callback_map.clear();
 		
-		callback_map.put(MyupkgConstants.FTYPE_UNK, new MyuUnkTypeHandler());
-		callback_map.put(MyupkgConstants.FTYPE_SEQ, new MyuSeqFile.SoundSeqHandler());
-		callback_map.put(MyupkgConstants.FTYPE_SBNK, new MyuSoundbankFile.SoundBankHandler());
-		callback_map.put(MyupkgConstants.FTYPE_IBNK, new MyuImagebankFile.MyuImagebankHandler());
+		TypeHandler unkhndl = new MyuUnkTypeHandler();
+		TypeHandler aunkhndl = new MyuUnkAnimeHandler();
+		TypeHandler seqhndl = new MyuSeqFile.SoundSeqHandler();
+		TypeHandler bnkhndl = new MyuSoundbankFile.SoundBankHandler();
+		TypeHandler ibnkhndl = new MyuImagebankFile.MyuImagebankHandler();
+		
+		callback_map.put(MyupkgConstants.FTYPE_UNK, unkhndl);
+		callback_map.put(MyupkgConstants.FTYPE_SEQ, seqhndl);
+		callback_map.put(MyupkgConstants.FTYPE_SBNK, bnkhndl);
+		callback_map.put(MyupkgConstants.FTYPE_IBNK, ibnkhndl);
+		callback_map.put(MyupkgConstants.FTYPE_AUNK, aunkhndl);
+		//callback_map.put(MyupkgConstants.FTYPE_IBNK, unkhndl);
+		
+		//callback_map.put(MyupkgConstants.ASSET_TYPE_IMAGEGROUP, unkhndl);
+		callback_map.put(MyupkgConstants.ASSET_TYPE_IMAGEGROUP, ibnkhndl);
+		callback_map.put(MyupkgConstants.ASSET_TYPE_SEQ, seqhndl);
+		callback_map.put(MyupkgConstants.ASSET_TYPE_BNK, bnkhndl);
+		callback_map.put(MyupkgConstants.ASSET_TYPE_ANIMUNK, aunkhndl);
 	}
 	
 	public static long[] readOffsetTable(FileBuffer arcfile){
@@ -99,6 +117,21 @@ public class MyuArcCommon {
 			if(n.getNodeType() == Node.ELEMENT_NODE){
 				Element child = (Element)n;
 				readXMLNode(me, child);
+			}
+			else if(n.getNodeType() == Node.TEXT_NODE) {
+				if(me.value == null) {
+					me.value = n.getTextContent();
+					me.value = me.value.trim();
+					if(me.value.isEmpty()) me.value = null;
+				}
+			}
+		}
+		
+		if(me.value != null) {
+			//Clean up quotation marks
+			while(me.value.startsWith("\"") && me.value.endsWith("\"")) {
+				me.value = me.value.substring(1, me.value.length()-1);
+				me.value = me.value.trim();
 			}
 		}
 		
@@ -175,13 +208,14 @@ public class MyuArcCommon {
 		bw.close();
 	}
 	
-	public static ISOXAImage readISOFile(String isopath) {
-		//TODO
+	public static ISOXAImage readISOFile(String isopath) throws IOException, CDInvalidRecordException, UnsupportedFileTypeException {
 		//If you just give it the bin image, it will assume...
 		// > That it contains the sector header and error correction (0x930 byte sectors)
 		
 		//It won't assume track 2 (the CDDA file) is either present or absent. It will check the size of the input image.
-		return null;
+		ISO iso = new ISO(FileBuffer.createBuffer(isopath), false);
+		ISOXAImage xa = new ISOXAImage(iso);
+		return xa;
 	}
 	
 	public static String findBIN_fromCUE(String cuepath) {
@@ -189,16 +223,192 @@ public class MyuArcCommon {
 		return null;
 	}
 	
+	public static FileBuffer bufferGarbageString2Data(String str) {
+		if(str == null) return null;
+		String[] split = str.split(";");
+		int alloc = 0;
+		for(int i = 0; i < split.length; i++) {
+			if(split[i].startsWith("Z")) {
+				try {alloc += Integer.parseInt(split[i].substring(1));}
+				catch(NumberFormatException ex) {
+					ex.printStackTrace();
+				}
+			}
+			else if(split[i].startsWith("N")) {
+				alloc += (split[i].length() - 1) >>> 1;
+			}
+		}
+		
+		FileBuffer garbage = new FileBuffer(alloc + 4);
+		for(int i = 0; i < split.length; i++) {
+			if(split[i].startsWith("Z")) {
+				try {
+					int zcount = Integer.parseInt(split[i].substring(1));
+					for(int j = 0; j < zcount; j++) garbage.addToFile((byte)0);
+				}
+				catch(NumberFormatException ex) {
+					ex.printStackTrace();
+				}
+			}
+			else if(split[i].startsWith("N")) {
+				int strlen = split[i].length();
+				int pos = 1;
+				while(pos < strlen) {
+					try {
+						int mybyte = Integer.parseInt(split[i].substring(pos, pos+2), 16);
+						garbage.addToFile((byte)mybyte);
+					}
+					catch(NumberFormatException ex) {
+						ex.printStackTrace();
+					}
+					pos += 2;
+				}
+			}
+		}
+		
+		return garbage;
+	}
+	
+	public static String bufferGarbageData2String(byte[] data) {
+		if(data == null) return null;
+		boolean sbempty = true;
+		boolean nzmode = false;
+		StringBuilder sb = new StringBuilder(1024);
+		int zstreak = 0;
+		for(int i = 0; i < data.length; i++) {
+			if(data[i] != 0) {
+				if(!nzmode) {
+					if(zstreak > 0) {
+						sb.append(Integer.toString(zstreak));
+					}
+					
+					if(!sbempty) {
+						sb.append(";");
+					}
+					else sbempty = false;
+					sb.append("N");
+					nzmode = true;
+				}
+				
+				sb.append(String.format("%02x", Byte.toUnsignedInt(data[i])));
+				zstreak = 0;
+			}
+			else {
+				if(zstreak < 1) {
+					if(!sbempty) {
+						sb.append(";");
+					}
+					else sbempty = false;
+					sb.append("Z");
+					nzmode = false;
+					zstreak++;
+				}
+				else zstreak++;
+			}
+		}
+		
+		if(zstreak > 0) {
+			sb.append(Integer.toString(zstreak));
+		}
+		return sb.toString();
+	}
+	
 	public static FileBuffer lzDecompress(FileBuffer indata){
 		int decsize = indata.intFromFile(0L);
-		FileBuffer outdata = new FileBuffer(decsize, false);
-		LZMuDef lzdef = LZMu.getDefinition();
-		StreamWrapper dec = lzdef.decompress(new FileBufferStreamer(indata));
-		while(!dec.isEmpty()) outdata.addToFile(dec.get());
-		
+		LZMu decer = new LZMu();
+		FileBufferStreamer instr = new FileBufferStreamer(indata);
+		for(int i = 0; i < 4; i++) instr.get();
+		FileBuffer outdata = decer.decodeToBuffer(instr, decsize);
 		return outdata;
 	}
+	
+	public static FileBuffer lzCompress(FileBuffer indata) {
+		return lzCompress(indata, COMPR_MODE_SMALL);
+	}
+	
+	public static FileBuffer lzCompress(FileBuffer indata, int mode) {
+		if(LzNative.libLoaded()) {
+			FileBuffer encdata = LzNative.lzCompressMatch(indata, (int)indata.getFileSize(), mode);
+			return encdata;
+		}
+		else {
+			LZMu compr = new LZMu();
+			compr.setCompressionStrategy(LZMu.COMP_LOOKAHEAD_QUICK);
+			FileBuffer encdata = compr.encode(indata);
+			return encdata;
+		}
+	}
 
+	public static MatchFile lzDecompressMatch(FileBuffer indata) {
+		int decsize = indata.intFromFile(0L);
+		LZMu decer = new LZMu();
+		FileBufferStreamer instr = new FileBufferStreamer(indata);
+		for(int i = 0; i < 4; i++) instr.get();
+		FileBuffer outdata = decer.decodeToBuffer(instr, decsize);
+		
+		MatchFile out = new MatchFile();
+		out.data = outdata;
+		
+		byte[] overflow = decer.getOverflowContents();
+		if(overflow != null) {
+			out.bufferGarbageString = bufferGarbageData2String(overflow);
+		}
+		
+		return out;
+	}
+	
+	public static FileBuffer lzCompressMatch(MatchFile indata) {
+		return lzCompressMatch(indata, COMPR_MODE_SMALL);
+	}
+	
+	public static FileBuffer lzCompressMatch(MatchFile indata, int mode) {
+		//Glue overflow to end of buffer
+		FileBuffer inbuff = indata.data;
+		int overflow = 0;
+		if(indata.bufferGarbageString != null && !indata.bufferGarbageString.isEmpty()) {
+			inbuff = new MultiFileBuffer(2);
+			inbuff.addToFile(indata.data);
+			FileBuffer garbage = bufferGarbageString2Data(indata.bufferGarbageString);
+			inbuff.addToFile(garbage);
+			overflow = (int)garbage.getFileSize();
+		}
+		
+		FileBuffer encdata = null;
+		if(LzNative.libLoaded()) {
+			encdata = LzNative.lzCompressMatch(inbuff, (int)inbuff.getFileSize() - overflow, mode);
+		}
+		else {
+			LZMu compr = new LZMu();
+			compr.setCompressionStrategy(LZMu.COMP_LOOKAHEAD_QUICK);
+			encdata = compr.encode(inbuff, overflow);
+		}
+		return encdata;
+	}
+	
+	public static FileBuffer lzCompressMatchForceLit(MatchFile indata, FileBuffer tableFile) {
+		//Glue overflow to end of buffer
+		FileBuffer inbuff = indata.data;
+		int overflow = 0;
+		if(indata.bufferGarbageString != null && !indata.bufferGarbageString.isEmpty()) {
+			inbuff = new MultiFileBuffer(2);
+			inbuff.addToFile(indata.data);
+			FileBuffer garbage = bufferGarbageString2Data(indata.bufferGarbageString);
+			inbuff.addToFile(garbage);
+			overflow = (int)garbage.getFileSize();
+		}
+		
+		FileBuffer encdata = null;
+		if(LzNative.libLoaded()) {
+			encdata = LzNative.lzCompressMatchForceLit(inbuff, (int)inbuff.getFileSize() - overflow, tableFile);
+		}
+		else {
+			LZMu compr = new LZMu();
+			compr.setCompressionStrategy(LZMu.COMP_LOOKAHEAD_QUICK);
+			encdata = compr.encode(inbuff, overflow);
+		}
+		return encdata;
+	}
+	
 	public static String[][] loadChecksumTable(String path) throws IOException {
 		List<String> lines = new LinkedList<String>();
 		if(!FileBuffer.fileExists(path)) return null;
@@ -223,6 +433,7 @@ public class MyuArcCommon {
 				
 				if(j == 2) tbl[i][j] = tbl[i][j].toUpperCase();
 			}
+			i++;
 		}
 		
 		return tbl;
@@ -246,11 +457,104 @@ public class MyuArcCommon {
 	}
 	
 	public static String localPath2UnixRel(String ref_path, String trg_path) {
-		//TODO
 		//Unix style relative path for trg_path relative to ref_path
 		//if ref_path is a file, strip to parent directory
+		if(!FileBuffer.directoryExists(ref_path)) {
+			int cidx = ref_path.lastIndexOf(File.separatorChar);
+			if(cidx >= 0) ref_path = ref_path.substring(0, cidx);
+		}
 		
-		return null;
+		String SEP = File.separator;
+		if(File.separatorChar == '\\') {
+			SEP = "\\\\";
+		}
+		
+		String[] ref_parts = ref_path.split(SEP);
+		String[] trg_parts = trg_path.split(SEP);
+		int matched = 0;
+		int scanlen = (ref_parts.length>trg_parts.length)?trg_parts.length:ref_parts.length;
+		for(int i = 0; i < scanlen; i++) {
+			if(ref_parts[i].equalsIgnoreCase(trg_parts[i])) {
+				matched++;
+			}
+			else break;
+		}
+		
+		//Is the target in the same dir or a subdir of the ref?
+		if(matched == ref_parts.length) {
+			String relpath = ".";
+			for(int i = matched; i < trg_parts.length; i++) {
+				relpath += "/" + trg_parts[i];
+			}
+			return relpath;
+		}
+		else {
+			//Add a .. dir for every dir back from ref to last match
+			int backcount = ref_parts.length - matched;
+			String relpath = "";
+			for(int i = 0; i < backcount; i++) {
+				if(i > 0) relpath += "/..";
+				else relpath += "..";
+			}
+			for(int i = matched; i < trg_parts.length; i++) {
+				relpath += "/" + trg_parts[i];
+			}
+			return relpath;
+		}
+	}
+	
+	public static String unixRelPath2Local(String wd, String trg) {
+		String SEP = File.separator;
+		if(File.separatorChar == '\\') {
+			SEP = "\\\\";
+		}
+		
+		if(trg == null) return wd;
+		
+		String[] wdparts = wd.split(SEP);
+		String[] trgparts = trg.split("/");
+		
+		int wdpos = wdparts.length-1;
+		int trgpos = 0;
+		for(int i = 0; i < trgparts.length; i++) {
+			if(trgparts[i].equals(".")) {
+				trgpos++;
+			}
+			else if(trgparts[i].equals("..")) {
+				trgpos++;
+				wdpos--;
+			}
+			else break;
+		}
+		
+		LinkedList<String> list = new LinkedList<String>();
+		for(int i = 0; i <= wdpos; i++) list.add(wdparts[i]);
+		for(int i = trgpos; i < trgparts.length; i++) list.add(trgparts[i]);
+		
+		int alloc = 0;
+		LinkedList<String> list2 = new LinkedList<String>();
+		for(String s : list) {
+			if(s.equals(".")) continue;
+			else if(s.equals("..")) {
+				if(!list2.isEmpty()) list2.removeLast();
+			}
+			else {
+				list2.add(s);
+				alloc += s.length();
+			}
+		}
+		list.clear();
+		
+		StringBuilder sb = new StringBuilder(alloc + 1);
+		boolean first = true;
+		for(String s : list2) {
+			if(!first) sb.append(File.separatorChar);
+			else first = false;
+			sb.append(s);
+		}
+		list2.clear();
+		
+		return sb.toString();
 	}
 	
 }

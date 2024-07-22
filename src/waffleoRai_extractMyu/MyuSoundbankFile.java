@@ -4,13 +4,13 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.Map;
 
 import javax.sound.midi.InvalidMidiDataException;
 
+import waffleoRai_SeqSound.MIDI;
 import waffleoRai_SeqSound.psx.SEQP;
 import waffleoRai_Sound.psx.PSXVAG;
-import waffleoRai_SoundSynth.AudioSampleStream;
-import waffleoRai_SoundSynth.soundformats.AIFFWriter;
 import waffleoRai_Utils.FileBuffer;
 import waffleoRai_Utils.FileBuffer.UnsupportedFileTypeException;
 import waffleoRai_soundbank.vab.PSXVAB;
@@ -89,7 +89,7 @@ public class MyuSoundbankFile {
 		return sbf;
 	}
 
-	public boolean exportSoundbankTo(String dirpath, LiteNode src_node, LiteNode trg_node){
+	public boolean exportSoundbankTo(String dirpath, LiteNode src_node, LiteNode trg_node, String xmlpathAbs){
 		//Node in arc xml lists the paths to the seqs to include in arc superbank, and path to xml describing the vab (both head and body)
 		
 		//Get subfile names
@@ -120,6 +120,7 @@ public class MyuSoundbankFile {
 		}
 		
 		//Dump sequences
+		String wdRel = MyuArcCommon.localPath2UnixRel(xmlpathAbs, dirpath);
 		for(int i = 0; i < seq_count; i++){
 			LiteNode seqnode = trg_node.newChild(MyupkgConstants.ASSET_TYPE_SEQ);
 			String filename = String.format("bseq_%03d", i);
@@ -127,11 +128,20 @@ public class MyuSoundbankFile {
 				if(seq_file_names[i] != null) filename = seq_file_names[i];
 			}
 			if(sequences[i] == null) continue;
+			
+			//Save seqp header metadata
+			int uspqn = sequences[i].getMicrosecondsPerQuarterNote();
+			seqnode.attr.put(MyupkgConstants.XML_ATTR_USPQN, Integer.toString(uspqn));
+			seqnode.attr.put(MyupkgConstants.XML_ATTR_SEQVER, Integer.toString(sequences[i].getVersion()));
+			int n = sequences[i].getTimeSignatureNumerator();
+			int d = sequences[i].getTimeSignatureDenominator();
+			seqnode.attr.put(MyupkgConstants.XML_ATTR_TIMESIG, n + ":" + d);
+			
 			filename += ".mid";
-			seqnode.value = filename;
+			seqnode.value = wdRel + "/" + filename;
 			
 			try {
-				sequences[i].writeMIDI(dirpath + File.separator + filename);
+				sequences[i].writeMIDISingleTrack(dirpath + File.separator + filename);
 			} catch (IOException e) {
 				e.printStackTrace();
 				MyuPackagerLogger.logMessage("MyuSoundbankFile.exportSoundbankTo", 
@@ -162,7 +172,8 @@ public class MyuSoundbankFile {
 				String name = String.format("vb_smpl_%03d", i);
 				sample_names[i] = name;
 				PSXVAG sample = vab.getSample(i);
-				AudioSampleStream str = sample.createSampleStream(false);
+				
+				/*AudioSampleStream str = sample.createSampleStream(false);
 				try {
 					AIFFWriter aifw = new AIFFWriter(str, sampledir + File.separator + name + ".aiff");
 					int frame_count = sample.totalFrames();
@@ -180,13 +191,23 @@ public class MyuSoundbankFile {
 					MyuPackagerLogger.logMessage("MyuSoundbankFile.exportSoundbankTo", 
 							"Interruption exception occurred while exporting sound sample \"" + name + "\"");
 					return false;
+				}*/
+				
+				try {
+					String outpath = sampledir + File.separator + name + ".vag";
+					sample.writeVAG(outpath);
+				}
+				catch (IOException e) {
+					MyuPackagerLogger.logMessage("MyuSoundbankFile.exportSoundbankTo", 
+							"Interruption exception occurred while exporting sound sample \"" + name + "\"");
+					return false;
 				}
 			}
 		}
 		
 		//Dump VAB as xml (both header and body are in this xml - body block specifies sound sample names and paths)
 		LiteNode bnknode = trg_node.newChild(MyupkgConstants.ASSET_TYPE_SOUNDFONT);
-		bnknode.value = vab_file_name + ".xml";
+		bnknode.value = wdRel + "/" + vab_file_name + ".xml";
 		LiteNode vab_root = new LiteNode();
 		vab_root.name = SoundbankXML.XML_VABNODE_VAB;
 		LiteNode vh = SoundbankXML.exportSoundbankHead(vab, sample_names);
@@ -195,7 +216,8 @@ public class MyuSoundbankFile {
 		LiteNode vbnode = vab_root.newChild(SoundbankXML.XML_VABNODE_VB);
 		for(int i = 0; i < sample_count; i++){
 			LiteNode smplnode = vbnode.newChild(MyupkgConstants.ASSET_TYPE_SOUNDSAMP);
-			smplnode.value = "samples/" + sample_names[i] + ".aiff";
+			//smplnode.value = "samples/" + sample_names[i] + ".aiff";
+			smplnode.value = "samples/" + sample_names[i] + ".vag";
 			smplnode.attr.put(SoundbankXML.XML_VABATTR_SAMPNAME, sample_names[i]);
 		}
 		
@@ -212,14 +234,243 @@ public class MyuSoundbankFile {
 		
 		return true;
 	}
+
+	public boolean importSoundfontFrom(String vhxmlPath) {
+		LiteNode root = MyuArcCommon.readXML(vhxmlPath);
+		if(root == null) return false;
+		
+		LiteNode vabnode = root;
+		if(root.name == null || !root.name.equals(SoundbankXML.XML_VABNODE_VAB)) {
+			vabnode = SoundbankXML.getFirstChildWithName(root, SoundbankXML.XML_VABNODE_VAB);
+		}
+		if(vabnode == null) return false;
+		
+		LiteNode vabhead = SoundbankXML.getFirstChildWithName(root, SoundbankXML.XML_VABNODE_VH);
+		LiteNode vabbody = SoundbankXML.getFirstChildWithName(root, SoundbankXML.XML_VABNODE_VB);
+		
+		Map<String, MyuSoundSample> smap = SoundbankXML.importSoundbankBody(vabbody);
+		vab = SoundbankXML.importSoundbankHead(vabhead, smap);
+		
+		//Load sample data
+		String wd = vhxmlPath;
+		int ci = wd.lastIndexOf(File.separator);
+		if(ci >= 0) wd = wd.substring(0, ci);
+		
+		MyuSoundSample[] samples = new MyuSoundSample[smap.size() + 1];
+		for(MyuSoundSample smpl : smap.values()) {
+			samples[smpl.getIndex()] = smpl;
+			if(!smpl.loadData(wd)) {
+				MyuPackagerLogger.logMessage("MyuSoundbankFile.importSoundfontFrom", "Failed to load one or more soundfont audio samples.");
+				return false;
+			}
+		}
+		for(int i = 0; i < samples.length; i++) {
+			if(samples[i] == null) break;
+			vab.addSample(samples[i].getSampleData());
+		}
+		
+		return true;
+	}
+	
+	public int writeBinToStream(ImportContext ctx) throws IOException {
+		if(ctx == null) return 0;
+		
+		//Get sequence count and load.
+		int seqCount = 0;
+		String xmlPath = null;
+		for(LiteNode child : ctx.import_specs.children) {
+			if(child.name == null) continue;
+			if(child.name.equals(MyupkgConstants.ASSET_TYPE_SEQ)) {
+				seqCount++;
+			}
+			else if(child.name.equals(MyupkgConstants.ASSET_TYPE_SOUNDFONT)) {
+				xmlPath = child.value;
+			}
+		}
+		
+		//Load sequences
+		if(seqCount > 0) sequences = new SEQP[seqCount];
+		int i = 0;
+		for(LiteNode child : ctx.import_specs.children) {
+			if(child.name == null) continue;
+			if(child.name.equals(MyupkgConstants.ASSET_TYPE_SEQ)) {
+				if(child.value != null && !child.value.isEmpty()) {
+					String midpath = MyuArcCommon.unixRelPath2Local(ctx.wd, child.value);
+					try {
+						FileBuffer dat = FileBuffer.createBuffer(midpath, true);
+						MIDI midi = new MIDI(dat);
+						sequences[i] = SEQP.fromMIDI(midi, true);
+						
+						//Load metadata
+						String aval = child.attr.get(MyupkgConstants.XML_ATTR_USPQN);
+						if(aval != null) {
+							sequences[i].setUSPQN(Integer.parseInt(aval));
+						}
+						
+						aval = child.attr.get(MyupkgConstants.XML_ATTR_TIMESIG);
+						if(aval != null) {
+							String[] spl = aval.split(":");
+							int n = 4;
+							int d = 4;
+							if(spl != null) n = Integer.parseInt(spl[0]);
+							if(spl != null && spl.length > 1) d = Integer.parseInt(spl[1]);
+							sequences[i].setTimeSignature(n, d);
+						}
+						
+						//Loop points. These will override whatever is in the incoming MIDI.
+						aval = child.attr.get(MyupkgConstants.XML_ATTR_LOOPST);
+						if(aval != null) {
+							sequences[i].setLoopStart(Long.parseLong(aval));
+						}
+						
+						aval = child.attr.get(MyupkgConstants.XML_ATTR_LOOPED);
+						if(aval != null) {
+							sequences[i].setLoopEnd(Long.parseLong(aval));
+						}
+						
+						aval = child.attr.get(MyupkgConstants.XML_ATTR_LOOPCT);
+						if(aval != null) {
+							sequences[i].setLoopCount(Integer.parseInt(aval));
+						}
+					}
+					catch(Exception ex) {
+						MyuPackagerLogger.logMessage("MyuSoundbankFile.writeBinToStream", 
+								"Could not load seq from \"" + midpath + "\"!");
+						ex.printStackTrace();
+						return 0;
+					}
+				}
+				i++;
+			}
+		}
+		
+		//Read in font specifications (and sound samples)
+		xmlPath = MyuArcCommon.unixRelPath2Local(ctx.wd, xmlPath);
+		if(!importSoundfontFrom(xmlPath)) {
+			MyuPackagerLogger.logMessage("MyuSoundbankFile.writeBinToStream", 
+					"Could not load soundfont from \"" + xmlPath + "\"!");
+			return 0;
+		}
+		
+		//Serialize everything and calculate sizes...
+		int alloc = (3 + sequences.length) << 2;
+		FileBuffer offTable = new FileBuffer(alloc, false);
+		FileBuffer[] serSeq = new FileBuffer[sequences.length];
+		FileBuffer vhdat = vab.serializeVabHead();
+		FileBuffer vbdat = vab.serializeVabBody();
+		
+		if(vhdat == null) {
+			MyuPackagerLogger.logMessage("MyuSoundbankFile.writeBinToStream", 
+					"Failed to serialize VAB header data!");
+			return 0;
+		}
+		
+		if(vbdat == null) {
+			MyuPackagerLogger.logMessage("MyuSoundbankFile.writeBinToStream", 
+					"Failed to serialize VAB body data!");
+			return 0;
+		}
+		
+		if(ctx.indexInArc == 0 && ctx.matchFlag) {
+			//Swap a couple bytes in the PAT.
+			
+			//Since serialized buffer is read only, copy into new buffer.
+			int vhdatSize = (int)vhdat.getFileSize();
+			FileBuffer buff = new FileBuffer(vhdatSize, false);
+			for(int j = 0; j < vhdatSize; j++) buff.addToFile(vhdat.getByte(j));
+			vhdat.dispose();
+			vhdat = buff;
+			
+			int patOff = 0x20; //Header size
+			vhdat.replaceByte((byte)0x7f, patOff + 1);
+			vhdat.replaceByte((byte)0x40, patOff + 4);
+		}
+		
+		for(int j = 0; j < sequences.length; j++) {
+			if(sequences[j] != null) {
+				try {
+					serSeq[j] = sequences[j].serializeSEQ();
+				}
+				catch (Exception e) {
+					MyuPackagerLogger.logMessage("MyuSoundbankFile.writeBinToStream", 
+							"Failed to serialize one or more SEQs!");
+					e.printStackTrace();
+					return 0;
+				}
+			}
+		}
+		
+		int stpos = (int)ctx.outpos;
+		for(int j = 0; j < 3; j++) offTable.addToFile(0); //Placeholders
+		int mypos = stpos + alloc; //Offtable size
+		int otpos = 12;
+		for(int j = 0; j < sequences.length; j++) {
+			if(serSeq[j] != null) {
+				offTable.addToFile(mypos - stpos - otpos);
+				mypos += (int)serSeq[j].getFileSize();
+				otpos += 4;
+			}
+			else offTable.addToFile(0);
+		}
+		offTable.replaceInt(mypos - stpos, 0L); //vh start
+		mypos += (int)vhdat.getFileSize();
+		offTable.replaceInt(mypos - stpos - 4, 4L); //vh end
+		
+		mypos = (mypos + 0x7ff) & ~0x7ff; //Next sector
+		offTable.replaceInt(mypos - stpos - 8, 8L); //vb start
+		
+		//Now can finally write actual data.
+		mypos = stpos;
+		offTable.writeToStream(ctx.output);
+		mypos += (int)offTable.getFileSize(); offTable.dispose();
+		for(int j = 0; j < sequences.length; j++) {
+			if(serSeq[j] != null) {
+				serSeq[j].writeToStream(ctx.output);
+				mypos += (int)serSeq[j].getFileSize();
+			}
+		}
+		
+		vhdat.writeToStream(ctx.output);
+		mypos += (int)vhdat.getFileSize(); vhdat.dispose();
+		
+		while((mypos & 0x7ff) != 0) {
+			ctx.output.write(MyupkgConstants.PADDING_BYTE_I);
+			mypos++;
+		}
+		
+		vbdat.writeToStream(ctx.output);
+		mypos += (int)vbdat.getFileSize(); vbdat.dispose();
+		
+		while((mypos & 0x7ff) != 0) {
+			ctx.output.write(MyupkgConstants.PADDING_BYTE_I);
+			mypos++;
+		}
+		
+		return mypos - stpos;
+	}
 	
 	public static class SoundBankHandler implements TypeHandler{
+		
+		public int importCallback(ImportContext ctx){
+			if(ctx == null) return 0;
+			
+			try {
+				MyuSoundbankFile sb = new MyuSoundbankFile();
+				return sb.writeBinToStream(ctx);
+			}
+			catch(IOException ex) {
+				ex.printStackTrace();
+			}
+			
+			return 0;
+		}
 
 		public boolean exportCallback(ExportContext ctx) {
+			//output audio files as vag (easier to full cycle)
 			//Write as MIDI and update output node
 			String filename = ctx.target_in.attr.get(MyupkgConstants.XML_ATTR_FILENAME);
 			if(filename == null){
-				MyuPackagerLogger.logMessage("MyuSeqFile.SoundBankHandler.exportCallback", 
+				MyuPackagerLogger.logMessage("MyuSoundbankFile.SoundBankHandler.exportCallback", 
 						"File name is required for export!");
 				return false;
 			}
@@ -230,17 +481,19 @@ public class MyuSoundbankFile {
 				ename = filename.toUpperCase();
 				ename = ename.replace(" ", "_");
 			}
+			ctx.target_out.attr.put(MyupkgConstants.XML_ATTR_FILENAME, filename);
 			ctx.target_out.attr.put(MyupkgConstants.XML_ATTR_ENUM, ename);
 			ctx.target_out.name = MyupkgConstants.ASSET_TYPE_BNK;
-			ctx.target_out.value = ctx.rel_dir + "/" + filename;
+			//ctx.target_out.value = ctx.rel_dir + "/" + filename;
 			
 			String outdir = ctx.output_dir + File.separator + filename;
+			///String outdirRel = MyuArcCommon.localPath2UnixRel(ctx.xml_wd, ctx.output_dir) + "/" + filename;
 			if(!FileBuffer.fileExists(outdir)){
 				try {
 					Files.createDirectories(Paths.get(outdir));
 				} catch (IOException e) {
 					e.printStackTrace();
-					MyuPackagerLogger.logMessage("MyuSeqFile.SoundBankHandler.exportCallback", 
+					MyuPackagerLogger.logMessage("MyuSoundbankFile.SoundBankHandler.exportCallback", 
 							"Could not create target directory \"" + outdir + "\"");
 					return false;
 				}
@@ -252,19 +505,19 @@ public class MyuSoundbankFile {
 				sb = MyuSoundbankFile.importBinary(ctx.data);
 			} catch (UnsupportedFileTypeException e) {
 				e.printStackTrace();
-				MyuPackagerLogger.logMessage("MyuSeqFile.SoundBankHandler.exportCallback", 
+				MyuPackagerLogger.logMessage("MyuSoundbankFile.SoundBankHandler.exportCallback", 
 						"Soundbank binary \"" + filename + "\" or one of its components could not be read.");
 			} catch (InvalidMidiDataException e) {
 				e.printStackTrace();
-				MyuPackagerLogger.logMessage("MyuSeqFile.SoundBankHandler.exportCallback", 
+				MyuPackagerLogger.logMessage("MyuSoundbankFile.SoundBankHandler.exportCallback", 
 						"There was a MIDI error importing a sequence from soundbank \"" + filename + "\"");
 			} catch (IOException e) {
 				e.printStackTrace();
-				MyuPackagerLogger.logMessage("MyuSeqFile.SoundBankHandler.exportCallback", 
+				MyuPackagerLogger.logMessage("MyuSoundbankFile.SoundBankHandler.exportCallback", 
 						"I/O Exception caught while trying to read soundbank binary \"" + filename + "\"");
 			}
 			
-			return sb.exportSoundbankTo(outdir, ctx.target_in, ctx.target_out);
+			return sb.exportSoundbankTo(outdir, ctx.target_in, ctx.target_out, ctx.xml_wd);
 		}
 		
 	}

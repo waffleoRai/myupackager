@@ -7,11 +7,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-import waffleoRai_Compression.lz77.LZMu;
-import waffleoRai_Compression.lz77.LZMu.LZMuDef;
 import waffleoRai_Utils.FileBuffer;
-import waffleoRai_Utils.FileBufferStreamer;
-import waffleoRai_Utils.StreamWrapper;
 import waffleoRai_Utils.StringUtils;
 
 public class Run_AutoSpecXmls {
@@ -57,12 +53,10 @@ public class Run_AutoSpecXmls {
 		}
 		else if(ARC_FTYPES[arc_index] == FTYPE_IMAGEBANK){
 			//Assumed sprites
-			LZMuDef cdef = LZMu.getDefinition();
-			StreamWrapper dec = cdef.decompress(new FileBufferStreamer(file_data));
-			dec.get(); dec.get();
-			int framecount = 0;
-			framecount |= dec.getFull() & 0xff;
-			framecount |= (dec.getFull() & 0xff) << 8;
+			FileBuffer decdat = MyuArcCommon.lzDecompress(file_data);
+			decdat.setEndian(false);
+			int framecount = (int)decdat.shortFromFile(2L);
+			
 			List<String> mylist = new ArrayList<String>(framecount);
 			for(int f = 0; f < framecount; f++) mylist.add(String.format("%s_f%03d", file_name, f));
 			return mylist;

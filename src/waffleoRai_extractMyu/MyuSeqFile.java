@@ -51,7 +51,7 @@ public class MyuSeqFile {
 	
 	public static MyuSeqFile importMidi(MIDI mid) throws InvalidMidiDataException{
 		MyuSeqFile seq = new MyuSeqFile();
-		seq.sequence = SEQP.fromMIDI(mid);
+		seq.sequence = SEQP.fromMIDI(mid, true);
 		return seq;
 	}
 	
@@ -84,7 +84,72 @@ public class MyuSeqFile {
 		return true;
 	}
 	
+	public boolean exportMidiSingleTrack(OutputStream out) throws IOException{
+		sequence.writeMIDISingleTrack(out);
+		return true;
+	}
+	
 	public static class SoundSeqHandler implements TypeHandler{
+		
+		public int importCallback(ImportContext ctx){
+			if(ctx == null) return 0;
+			
+			String filename = ctx.import_specs.value;
+			if(filename == null) {
+				MyuPackagerLogger.logMessage("MyuSeqFile.SoundSeqHandler.importCallback", "File name is required for import!");
+				return 0;
+			}
+			
+			//Read MIDI file
+			try {
+				int ret = 0;
+				FileBuffer data = FileBuffer.createBuffer(filename, true);
+				MIDI mid = new MIDI(data);
+				MyuSeqFile seqfile = MyuSeqFile.importMidi(mid);
+				
+				//Metadata
+				String aval = ctx.import_specs.attr.get(MyupkgConstants.XML_ATTR_USPQN);
+				if(aval != null) {
+					seqfile.sequence.setUSPQN(Integer.parseInt(aval));
+				}
+				else seqfile.sequence.setTempo(120);
+				
+				aval = ctx.import_specs.attr.get(MyupkgConstants.XML_ATTR_TIMESIG);
+				if(aval != null) {
+					String[] spl = aval.split(":");
+					int n = 4;
+					int d = 4;
+					if(spl != null) n = Integer.parseInt(spl[0]);
+					if(spl != null && spl.length > 1) d = Integer.parseInt(spl[1]);
+					seqfile.sequence.setTimeSignature(n, d);
+				}
+				else seqfile.sequence.setTimeSignature(4, 4);
+				
+				//Loop points. These will override whatever is in the incoming MIDI.
+				aval = ctx.import_specs.attr.get(MyupkgConstants.XML_ATTR_LOOPST);
+				if(aval != null) {
+					seqfile.sequence.setLoopStart(Long.parseLong(aval));
+				}
+				
+				aval = ctx.import_specs.attr.get(MyupkgConstants.XML_ATTR_LOOPED);
+				if(aval != null) {
+					seqfile.sequence.setLoopEnd(Long.parseLong(aval));
+				}
+				
+				aval = ctx.import_specs.attr.get(MyupkgConstants.XML_ATTR_LOOPCT);
+				if(aval != null) {
+					seqfile.sequence.setLoopCount(Integer.parseInt(aval));
+				}
+				
+				ret = seqfile.outputToArcStream(ctx.output);
+				return ret;
+			}
+			catch(Exception ex) {
+				ex.printStackTrace();
+			}
+			
+			return 0;
+		}
 
 		public boolean exportCallback(ExportContext ctx) {
 			//Write as MIDI and update output node
@@ -109,8 +174,17 @@ public class MyuSeqFile {
 			try{
 				MyuSeqFile me = MyuSeqFile.readSoundseq(ctx.data);
 				BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(midi_path));
-				me.exportMidi(bos);
+				//me.exportMidi(bos);
+				me.exportMidiSingleTrack(bos);
 				bos.close();
+				
+				//Extract and save metadata
+				int uspqn = me.sequence.getMicrosecondsPerQuarterNote();
+				ctx.target_out.attr.put(MyupkgConstants.XML_ATTR_USPQN, Integer.toString(uspqn));
+				ctx.target_out.attr.put(MyupkgConstants.XML_ATTR_SEQVER, Integer.toString(me.sequence.getVersion()));
+				int n = me.sequence.getTimeSignatureNumerator();
+				int d = me.sequence.getTimeSignatureDenominator();
+				ctx.target_out.attr.put(MyupkgConstants.XML_ATTR_TIMESIG, n + ":" + d);
 			}
 			catch(UnsupportedFileTypeException ex){
 				MyuPackagerLogger.logMessage("MyuSeqFile.SoundSeqHandler.exportCallback", 
