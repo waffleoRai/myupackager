@@ -53,15 +53,27 @@ public class MyupkgConstants {
 	public static final String XML_ATTR_FILEPERM = "Permissions";
 	public static final String XML_ATTR_OWNERGROUP = "OwnerGroupID";
 	public static final String XML_ATTR_OWNERUSER = "OwnerUserID";
+	public static final String XML_ATTR_EMBEDTYPE = "EmbedType";
+	public static final String XML_ATTR_LEADIN = "LeadIn";
+	public static final String XML_ATTR_LEADINGARBAGE = "LeadInGarbage";
+	public static final String XML_ATTR_LEADOUT = "LeadOut";
+	public static final String XML_ATTR_FILENO = "FileNo";
+	public static final String XML_ATTR_MODE = "Mode";
+	public static final String XML_ATTR_FORM = "Form";
 	
 	public static final String XML_NODENAME_SUBFILE = "SubFile";
 	public static final String XML_NODENAME_ISOBUILD = "IsoBuild";
 	public static final String XML_NODENAME_PATHTABLE = "PathTable";
 	public static final String XML_NODENAME_PSLOGO = "PSLogo";
 	public static final String XML_NODENAME_CDFILE = "CDFile";
+	public static final String XML_NODENAME_CDTRACK = "CDTrack";
 	
 	public static final String XML_CDFILETYPE_ARC = "Archive"; //If this, then the value points to an xml telling how to build the arc
 	public static final String XML_CDFILETYPE_FILE = "File"; //If this, then value points directly to file to include
+	
+	public static final String XML_EMBEDTYPE_STD = "Standard";
+	public static final String XML_EMBEDTYPE_XASTR = "XAStream";
+	public static final String XML_EMBEDTYPE_DA = "RawAudio";
 	
 	public static final String ASSET_TYPE_CLUT = "Clut";
 	public static final String ASSET_TYPE_IMAGE = "Image";

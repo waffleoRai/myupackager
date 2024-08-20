@@ -21,7 +21,6 @@ import org.w3c.dom.NodeList;
 import waffleoRai_Compression.lz77.LZMu;
 import waffleoRai_Containers.CDDateTime;
 import waffleoRai_Containers.CDTable.CDInvalidRecordException;
-import waffleoRai_Containers.ISO;
 import waffleoRai_Containers.ISOXAImage;
 import waffleoRai_Files.XMLReader;
 import waffleoRai_Utils.FileBuffer;
@@ -213,8 +212,9 @@ public class MyuArcCommon {
 		// > That it contains the sector header and error correction (0x930 byte sectors)
 		
 		//It won't assume track 2 (the CDDA file) is either present or absent. It will check the size of the input image.
-		ISO iso = new ISO(FileBuffer.createBuffer(isopath), false);
-		ISOXAImage xa = new ISOXAImage(iso);
+		//ISO iso = new ISO(FileBuffer.createBuffer(isopath), false);
+		//ISOXAImage xa = new ISOXAImage(iso);
+		ISOXAImage xa = new ISOXAImage(isopath);
 		return xa;
 	}
 	

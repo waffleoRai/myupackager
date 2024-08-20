@@ -27,4 +27,11 @@ public class LiteNode {
 		return child;
 	}
 	
+	public LiteNode getFirstChildWithName(String name) {
+		for(LiteNode child : children) {
+			if(child.name.equals(name)) return child;
+		}
+		return null;
+	}
+	
 }
