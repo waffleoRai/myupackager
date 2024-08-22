@@ -8,6 +8,7 @@ public class MyuCode {
 	public static final int MIPS_RELOC_HI16 = 5;
 	public static final int MIPS_RELOC_LO16 = 6;
 	public static final int MIPS_RELOC_GPREL16 = 7;
+	public static final int MIPS_RELOC_PC16 = 10;
 	
 	public static long exeOffset2Address(int offset) {
 		long addr = Integer.toUnsignedLong(offset);

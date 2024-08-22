@@ -46,7 +46,9 @@ public class ObjCheck {
 			return false;
 		}
 		
-		String[] spl = ctx.sectblPath.split(File.separator);
+		String sep = File.separator;
+		if(sep.equals("\\")) sep += "\\";
+		String[] spl = ctx.sectblPath.split(sep);
 		for(int i = 0; i <= (spl.length - 2); i++) {
 			if(i > 0) ctx.indir += File.separator;
 			ctx.indir += spl[i];
@@ -76,6 +78,8 @@ public class ObjCheck {
 		final String snames[] = {".rodata", ".text", ".data", ".sdata", ".sbss", ".bss"};
 		
 		for(Section sec : sectbl) {
+			if(!sec.isSys() && sec.getName().equals("END")) break;
+			
 			//Load obj
 			String opath = ctx.objDir + File.separator;
 			if(sec.isSys()) opath += "psx" + File.separator;
@@ -115,12 +119,14 @@ public class ObjCheck {
 					ssize = sec.getSDataSize();
 				}
 				else if(sname.equals(".sbss")) {
-					staddr = sec.getSBssAddr();
-					ssize = sec.getSBssSize();
+					//staddr = sec.getSBssAddr();
+					//ssize = sec.getSBssSize();
+					continue;
 				}
 				else if(sname.equals(".bss")) {
-					staddr = sec.getBssAddr();
-					ssize = sec.getBssSize();
+					//staddr = sec.getBssAddr();
+					//ssize = sec.getBssSize();
+					continue;
 				}
 				
 				if(staddr < 1L || ssize < 1) continue;
@@ -128,6 +134,8 @@ public class ObjCheck {
 				
 				ELFSection osec = obj.getSectionByName(sname);
 				FileBuffer refsec = exedat.createCopy(stoff, stoff + ssize);
+				FileBuffer odatf = FileBuffer.wrap(osec.getRawData());
+				odatf.setEndian(false);
 				
 				//Zero out any relocations
 				List<ELFReloc> relocs = obj.getRelocTableForSection(sname);
@@ -141,14 +149,18 @@ public class ObjCheck {
 							int word = refsec.intFromFile(rofs);
 							word &= ~0x03ffffff;
 							refsec.replaceInt(word, rofs);
+							odatf.replaceInt(word, rofs);
 							break;
 						case MyuCode.MIPS_RELOC_GPREL16:
 						case MyuCode.MIPS_RELOC_HI16:
 						case MyuCode.MIPS_RELOC_LO16:
+						case MyuCode.MIPS_RELOC_PC16:
 							refsec.replaceShort((short)0, rofs);
+							odatf.replaceShort((short)0, rofs);
 							break;
 						case MyuCode.MIPS_RELOC_32:
 							refsec.replaceInt(0, rofs);
+							odatf.replaceInt(0, rofs);
 							break;
 						default:
 							MyuPackagerLogger.logMessage("ObjCheck.main_objcheck", "ERROR: Unknown reloc type: " + rtype);
@@ -158,7 +170,7 @@ public class ObjCheck {
 				}
 
 				//Compare. If mismatch flag and print
-				byte[] odat = osec.getRawData();
+				byte[] odat = odatf.getBytes();
 				int mismatchPos = -1;
 				for(int i = 0; i < ssize; i++) {
 					if(i >= odat.length) {
@@ -170,6 +182,10 @@ public class ObjCheck {
 						mismatchPos = i;
 						break;
 					}
+				}
+				if(mismatchPos < 0) {
+					//Make sure odat is not bigger.
+					if(odat.length > ssize) mismatchPos = ssize;
 				}
 				refsec.dispose();
 				

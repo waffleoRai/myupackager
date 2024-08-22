@@ -96,6 +96,13 @@ public class GenSplat {
 			System.exit(1);
 		}
 		
+		//Calculate sbss/bss size
+		long bssTotal = 0;
+		for(Section sec : seclist) {
+			bssTotal += sec.getBssSize();
+			bssTotal += sec.getSBssSize();
+		}
+		
 		//Read options (Mostly just copies it over)
 		List<String> oplines = new LinkedList<String>();
 		BufferedReader br = new BufferedReader(new FileReader(ctx.opsPath));
@@ -128,7 +135,7 @@ public class GenSplat {
 		bw.write("    type: code\n");
 		bw.write("    start: 0x800\n");
 		bw.write("    vram: 0x80010000\n");
-		bw.write("    bss_size: 0x0\n");
+		bw.write("    bss_size: 0x" + Long.toHexString(bssTotal) + "\n");
 		bw.write("    subalign: 4\n");
 		
 		bw.write("    subsegments:\n");
@@ -203,8 +210,8 @@ public class GenSplat {
 			String secname = sec.getName();
 			if(secname.equals("END") && !sec.isSys()) {
 				//System.err.println("Data End VAddr: " + String.format("%08x", sec.getDataAddr()));
-				int offset = MyuCode.address2ExeOffset(sec.getSDataAddr());
-				bw.write(String.format("  - [0x%x]\n", offset));
+				//int offset = MyuCode.address2ExeOffset(sec.getSDataAddr());
+				//bw.write(String.format("  - [0x%x]\n", offset));
 				break;
 			}
 			if(sec.hasSData()) {
@@ -220,6 +227,47 @@ public class GenSplat {
 				if(libname != null && !libname.isEmpty()) bw.write(libname + "/");
 				bw.write(secname);
 				bw.write("]\n");
+			}
+		}
+		
+		//sbss
+		for(Section sec : seclist) {
+			String secname = sec.getName();
+			if(secname.equals("END") && !sec.isSys()) break;
+			if(sec.hasSBss()) {
+				bw.write("      - {type: sbss, vram: ");
+				bw.write(String.format("0x%08x, ", sec.getSBssAddr()));
+				bw.write("name: ");
+				if(sec.isSys()) {
+					bw.write("psx/");
+				}
+				String libname = sec.getLibName();
+				if(libname != null && !libname.isEmpty()) bw.write(libname + "/");
+				bw.write(secname);
+				bw.write("}\n");
+			}
+		}
+		
+		//bss
+		for(Section sec : seclist) {
+			String secname = sec.getName();
+			if(secname.equals("END") && !sec.isSys()) {
+				//System.err.println("Data End VAddr: " + String.format("%08x", sec.getDataAddr()));
+				int offset = MyuCode.address2ExeOffset(sec.getSDataAddr()); //Keep it SData end - since last in ROM!
+				bw.write(String.format("  - [0x%x]\n", offset));
+				break;
+			}
+			if(sec.hasBss()) {
+				bw.write("      - {type: bss, vram: ");
+				bw.write(String.format("0x%08x, ", sec.getBssAddr()));
+				bw.write("name: ");
+				if(sec.isSys()) {
+					bw.write("psx/");
+				}
+				String libname = sec.getLibName();
+				if(libname != null && !libname.isEmpty()) bw.write(libname + "/");
+				bw.write(secname);
+				bw.write("}\n");
 			}
 		}
 		

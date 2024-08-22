@@ -23,9 +23,7 @@ public class BuildScripts {
 	private static final String SHVAR_WIN_TOOL = "WIN_TOOL";
 	private static final String SHVAR_ASM_INCL = "ASM_INCL";
 	
-	private static final String ADD_ASM_ARGS = "-mips1";
-	
-	//TODO Make sure $gp is right
+	private static final String ADD_ASM_ARGS = "-mips1 -msoft-float";
 	
 	private static class BuildModule{
 		public String name;
@@ -142,7 +140,7 @@ public class BuildScripts {
 			
 			//Assemble command
 			if(gnuFlag) {
-				shOut.write("mips-linux-gnu-as -EL -O0 -march=r3000");
+				shOut.write("mips-linux-gnu-as -EL -O0 -march=r3000 -no-pad-sections");
 				shOut.write(" " + ADD_ASM_ARGS);
 				shOut.write(" -I \"${" + SHVAR_ASM_INCL + "}\"");
 				shOut.write(" -o \"" + moduleSpec.oPathRel + "\"");
@@ -172,7 +170,6 @@ public class BuildScripts {
 	}
 	
 	private void writeLinkerScript() throws IOException {
-		//TODO
 		//String indent1 = "    ";
 		
 		//Similar to splat script, but no PSX header and uses the combined modules
@@ -180,6 +177,7 @@ public class BuildScripts {
 		bw.write("SECTIONS\n{\n");
 		bw.write("\t__romPos = 0x800;\n");
 		bw.write("\t_gp = ADDR(.sdata);\n");
+		bw.write("\tstart = ADDR(.text) + 8;\n");
 		
 		//rodata
 		bw.write("\n\trodata_ROM_START = __romPos;\n");
@@ -204,7 +202,7 @@ public class BuildScripts {
 		//text
 		bw.write("\n\ttext_ROM_START = __romPos;\n");
 		bw.write("\ttext_VRAM = ADDR(.text);\n");
-		bw.write("\t.text : AT(text_ROM_START) SUBALIGN(4)\n");
+		bw.write("\t.text rodata_VRAM_END : AT(text_ROM_START) SUBALIGN(4)\n");
 		bw.write("\t{\n");
 		bw.write("\t\ttext_START = .;\n");
 		for(BuildModule mod : modules) {
@@ -224,7 +222,7 @@ public class BuildScripts {
 		//data
 		bw.write("\n\tdata_ROM_START = __romPos;\n");
 		bw.write("\tdata_VRAM = ADDR(.data);\n");
-		bw.write("\t.data : AT(data_ROM_START) SUBALIGN(4)\n");
+		bw.write("\t.data text_VRAM_END : AT(data_ROM_START) SUBALIGN(4)\n");
 		bw.write("\t{\n");
 		bw.write("\t\tdata_START = .;\n");
 		for(BuildModule mod : modules) {
@@ -245,7 +243,7 @@ public class BuildScripts {
 		//sdata
 		bw.write("\n\tsdata_ROM_START = __romPos;\n");
 		bw.write("\tsdata_VRAM = ADDR(.sdata);\n");
-		bw.write("\t.sdata : AT(sdata_ROM_START) SUBALIGN(4)\n");
+		bw.write("\t.sdata data_VRAM_END : AT(sdata_ROM_START) SUBALIGN(4)\n");
 		bw.write("\t{\n");
 		bw.write("\t\tsdata_START = .;\n");
 		for(BuildModule mod : modules) {
@@ -266,7 +264,7 @@ public class BuildScripts {
 		//sbss
 		bw.write("\n\tsbss_ROM_START = __romPos;\n");
 		bw.write("\tsbss_VRAM = ADDR(.sbss);\n");
-		bw.write("\t.sbss : AT(sbss_ROM_START) SUBALIGN(4)\n");
+		bw.write("\t.sbss sdata_VRAM_END : AT(sbss_ROM_START) SUBALIGN(4)\n");
 		bw.write("\t{\n");
 		bw.write("\t\tsbss_START = .;\n");
 		for(BuildModule mod : modules) {
@@ -287,7 +285,7 @@ public class BuildScripts {
 		//bss
 		bw.write("\n\tbss_ROM_START = __romPos;\n");
 		bw.write("\tbss_VRAM = ADDR(.bss);\n");
-		bw.write("\t.bss : AT(bss_ROM_START) SUBALIGN(8)\n");
+		bw.write("\t.bss sbss_VRAM_END : AT(bss_ROM_START) SUBALIGN(8)\n");
 		bw.write("\t{\n");
 		bw.write("\t\tbss_START = .;\n");
 		for(BuildModule mod : modules) {
@@ -305,6 +303,9 @@ public class BuildScripts {
 		bw.write("\tbss_ROM_END = __romPos;\n");
 		bw.write("\tbss_VRAM_END = .;\n");
 		
+		bw.write("\n\t/DISCARD/ :\n\t{\n");
+		bw.write("\t\t*(*);\n\t}\n");
+		
 		bw.write("}\n");
 		bw.close();
 		
@@ -321,7 +322,12 @@ public class BuildScripts {
 		
 		mod.libName = moduleSpec.attr.get("LibName");
 		String objdir = buildDir + File.separator + "obj";
-		if(mod.libName != null) objdir += File.separator + mod.libName;
+		if(mod.libName != null) {
+			if(mod.libName.startsWith("Lib")) {
+				objdir += File.separator + "psx";
+			}
+			objdir += File.separator + mod.libName;
+		}
 		if(!FileBuffer.directoryExists(objdir)) {
 			Files.createDirectories(Paths.get(objdir));
 		}

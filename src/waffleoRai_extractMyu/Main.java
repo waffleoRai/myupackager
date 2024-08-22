@@ -9,6 +9,7 @@ import waffleoRai_extractMyu.mains.AsmSplit;
 import waffleoRai_extractMyu.mains.BuildScripts;
 import waffleoRai_extractMyu.mains.CheckMatch;
 import waffleoRai_extractMyu.mains.DumpBss;
+import waffleoRai_extractMyu.mains.Elf2PsxExe;
 import waffleoRai_extractMyu.mains.GenSplat;
 import waffleoRai_extractMyu.mains.IsoBuild;
 import waffleoRai_extractMyu.mains.IsoExtract;
@@ -36,6 +37,7 @@ public class Main {
 	public static final String TOOLNAME_GEN_SPL_YAML = "splatyaml";
 	public static final String TOOLNAME_CHECKOBJ = "chkobj";
 	public static final String TOOLNAME_PSXEXE_2_ELF = "psxexe2elf";
+	public static final String TOOLNAME_ELF_2_PSXEXE = "elf2psxexe";
 	
 	public static final String TOOLNAME_TESTNATIVE = "testnative";
 	
@@ -195,6 +197,16 @@ public class Main {
 		System.err.println("--log\t\t[Path to log file output (Defaults to stderr)]");
 	}
 	
+	public static void printUsage_elf2psxexe(){
+		System.err.println("MyuPackager ELF 2 PSXEXE  ---------- ");
+		System.err.println("--input\t\t[Path to input ELF]");
+		System.err.println("--output\t\t[Path to output PSXEXE]");
+		System.err.println("-jp\t\t[Set region to Japan (Default)]");
+		System.err.println("-na\t\t[Set region to North America]");
+		System.err.println("-eu\t\t[Set region to Europe]");
+		System.err.println("--log\t\t[Path to log file output (Defaults to stderr)]");
+	}
+	
 	private static void testNative() {
 		boolean okay = LzNative.libLoaded();
 		if(okay) {
@@ -267,6 +279,9 @@ public class Main {
 			}
 			else if(tool.equalsIgnoreCase(TOOLNAME_CHECKOBJ)){
 				ObjCheck.main_objcheck(argmap);
+			}
+			else if(tool.equalsIgnoreCase(TOOLNAME_ELF_2_PSXEXE)){
+				Elf2PsxExe.main_elf2psxexe(argmap);
 			}
 			else if(tool.equalsIgnoreCase(TOOLNAME_TESTNATIVE)){
 				testNative();
