@@ -21,9 +21,12 @@ public class BuildScripts {
 	private static final String SHVAR_SMERGE = "SMERGE_SH";
 	private static final String SHVAR_PSYQ_DIR = "PSYQ_DIR";
 	private static final String SHVAR_WIN_TOOL = "WIN_TOOL";
-	private static final String SHVAR_ASM_INCL = "ASM_INCL";
+	private static final String SHVAR_INCL_DIR = "INCL_DIR";
+	private static final String SHVAR_MASPSX = "MASPSX_PATH";
 	
 	private static final String ADD_ASM_ARGS = "-mips1 -msoft-float";
+	private static final String ADD_GCC_ARGS = "-msoft-float -mlong32 -finline -fpeephole";
+	private static final String ADD_MASPSX_ARGS = "--aspsx-version=2.86";
 	
 	private static class BuildModule{
 		public String name;
@@ -113,17 +116,17 @@ public class BuildScripts {
 	private void processModuleBuild(BuildModule moduleSpec, Writer shOut) throws IOException {
 
 		//Look for assembly spec. If not there, look for compile spec.
+		String asmdir = buildDir + File.separator + "asm";
+		if(moduleSpec.libName != null) asmdir += File.separator + moduleSpec.libName;
+		if(!FileBuffer.directoryExists(asmdir)) {
+			Files.createDirectories(Paths.get(asmdir));
+		}
+		
+		String spath = asmdir + File.separator + moduleSpec.name + ".s";
+		String spathRel = MyuArcCommon.localPath2UnixRel(indir, spath);
+		
 		if(moduleSpec.useAsm) {
 			//If more than one section, merge into file.
-			String asmdir = buildDir + File.separator + "asm";
-			if(moduleSpec.libName != null) asmdir += File.separator + moduleSpec.libName;
-			if(!FileBuffer.directoryExists(asmdir)) {
-				Files.createDirectories(Paths.get(asmdir));
-			}
-			
-			String spath = asmdir + File.separator + moduleSpec.name + ".s";
-			String spathRel = MyuArcCommon.localPath2UnixRel(indir, spath);
-			
 			shOut.write("\"${" + SHVAR_SMERGE +"}\"");
 			shOut.write(" -o \"" + spathRel + "\"");
 			
@@ -142,7 +145,7 @@ public class BuildScripts {
 			if(gnuFlag) {
 				shOut.write("mips-linux-gnu-as -EL -O0 -march=r3000 -no-pad-sections");
 				shOut.write(" " + ADD_ASM_ARGS);
-				shOut.write(" -I \"${" + SHVAR_ASM_INCL + "}\"");
+				shOut.write(" -I \"${" + SHVAR_INCL_DIR + "}\"");
 				shOut.write(" -o \"" + moduleSpec.oPathRel + "\"");
 				shOut.write(" \"" + spathRel + "\"\n");
 			}
@@ -156,7 +159,7 @@ public class BuildScripts {
 					shOut.write("\"${" + SHVAR_PSYQ_DIR + "}/ASPSX.EXE\"");
 				}
 				shOut.write(" -EL -O0 -march=r3000 " + ADD_ASM_ARGS);
-				shOut.write(" -I \"${" + SHVAR_ASM_INCL + "}\"");
+				shOut.write(" -I \"${" + SHVAR_INCL_DIR + "}\"");
 				shOut.write(" -o \"" + moduleSpec.oPathRel + "\"");
 				shOut.write(" \"" + spathRel + "\"\n"); //TODO Script would also have to be cleaned up (eg. remove comments) for ASPSX to even look at it. Also need windows line endings
 			}
@@ -164,13 +167,33 @@ public class BuildScripts {
 			shOut.write("rm \"" + spathRel + "\"\n\n");
 		}
 		else {
-			//TODO
+			shOut.write("echo -e \"> Compiling "+ moduleSpec.cPath + "...\"\n");
+			if(!wslFlag) {
+				shOut.write("\"${" + SHVAR_WIN_TOOL + "}\" ");
+			}
+			shOut.write("\"${" + SHVAR_PSYQ_DIR + "}/CPPPSX.EXE\"");
+			shOut.write(" -I \"${" + SHVAR_INCL_DIR + "}\"");
+			shOut.write(" \"" + moduleSpec.cPath + "\"");
+			shOut.write(" | ");
+			if(!wslFlag) {
+				shOut.write("\"${" + SHVAR_WIN_TOOL + "}\" ");
+			}
+			shOut.write("\"${" + SHVAR_PSYQ_DIR + "}/CC1PSX.EXE\" -G0");
+			shOut.write(" -" + moduleSpec.cOptLevel);
+			shOut.write(" -o \"" + spathRel + "\"\n");
+			shOut.write("mips-linux-gnu-as -EL -O0 -march=r3000 -no-pad-sections");
+			shOut.write(" " + ADD_ASM_ARGS);
+			shOut.write(" -I \"${" + SHVAR_INCL_DIR + "}\"");
+			shOut.write(" -o \"" + moduleSpec.oPathRel + "\"\n");
+			
+			shOut.write("rm \"" + spathRel + "\"\n\n");
 		}
 		
 	}
 	
 	private void writeLinkerScript() throws IOException {
 		//String indent1 = "    ";
+		//TODO Need to include the compilation targets
 		
 		//Similar to splat script, but no PSX header and uses the combined modules
 		BufferedWriter bw = new BufferedWriter(new FileWriter(ldPath));
@@ -188,6 +211,11 @@ public class BuildScripts {
 		for(BuildModule mod : modules) {
 			if(mod.roDataPath != null) {
 				bw.write("\t\t" + mod.oPathRel + "(.rodata);\n");
+			}
+			else {
+				if(!mod.useAsm) {
+					bw.write("\t\t" + mod.oPathRel + "(.rodata);\n");
+				}
 			}
 		}
 		bw.write("\t\trodata_END = .;\n");
@@ -208,6 +236,11 @@ public class BuildScripts {
 		for(BuildModule mod : modules) {
 			if(mod.textPath != null) {
 				bw.write("\t\t" + mod.oPathRel + "(.text);\n");
+			}
+			else {
+				if(!mod.useAsm) {
+					bw.write("\t\t" + mod.oPathRel + "(.text);\n");
+				}
 			}
 		}
 		bw.write("\t\ttext_END = .;\n");
@@ -230,6 +263,12 @@ public class BuildScripts {
 				bw.write("\t\t" + mod.name + "_data = .;\n");
 				bw.write("\t\t" + mod.oPathRel + "(.data);\n");
 			}
+			else {
+				if(!mod.useAsm) {
+					bw.write("\t\t" + mod.name + "_data = .;\n");
+					bw.write("\t\t" + mod.oPathRel + "(.data);\n");
+				}
+			}
 		}
 		bw.write("\t\tdata_END = .;\n");
 		bw.write("\t\tdata_SIZE = ABSOLUTE(data_END - data_START);\n");
@@ -250,6 +289,12 @@ public class BuildScripts {
 			if(mod.sdataPath != null) {
 				bw.write("\t\t" + mod.name + "_sdata = .;\n");
 				bw.write("\t\t" + mod.oPathRel + "(.sdata);\n");
+			}
+			else {
+				if(!mod.useAsm) {
+					bw.write("\t\t" + mod.name + "_sdata = .;\n");
+					bw.write("\t\t" + mod.oPathRel + "(.sdata);\n");
+				}
 			}
 		}
 		bw.write("\t\tsdata_END = .;\n");
@@ -272,6 +317,11 @@ public class BuildScripts {
 				//bw.write("\t\t" + mod.name + "_sbss = .;\n");
 				bw.write("\t\t" + mod.oPathRel + "(.sbss);\n");
 			}
+			else {
+				if(!mod.useAsm) {
+					bw.write("\t\t" + mod.oPathRel + "(.sbss);\n");
+				}
+			}
 		}
 		bw.write("\t\tsbss_END = .;\n");
 		bw.write("\t\tsbss_SIZE = ABSOLUTE(sbss_END - sbss_START);\n");
@@ -292,6 +342,11 @@ public class BuildScripts {
 			if(mod.bssPath != null) {
 				//bw.write("\t\t" + mod.name + "_bss = .;\n");
 				bw.write("\t\t" + mod.oPathRel + "(.bss);\n");
+			}
+			else {
+				if(!mod.useAsm) {
+					bw.write("\t\t" + mod.oPathRel + "(.bss);\n");
+				}
 			}
 		}
 		bw.write("\t\tbss_END = .;\n");
@@ -359,8 +414,16 @@ public class BuildScripts {
 		else {
 			buildSpecNode = moduleSpec.getFirstChildWithName("CCompile");
 			if(buildSpecNode != null) {
-				//TODO
 				mod.useAsm = false;
+				LiteNode src = buildSpecNode.getFirstChildWithName("Src");
+				if(src == null) {
+					MyuPackagerLogger.logMessage("BuildScripts.parseModuleNode", "WARNING: Module \"" + mod.name + "\" included, but no source file(s) specified! Skipping!");
+					return null;
+				}
+				mod.cPath = src.value;
+				String aval = buildSpecNode.attr.get("Optimization");
+				if(aval != null) mod.cOptLevel = aval;
+				else mod.cOptLevel = "O2";
 			}
 			else {
 				MyuPackagerLogger.logMessage("BuildScripts.parseModuleNode", "WARNING: Module \"" + mod.name + "\" included, but no build method specified! Skipping!");
@@ -407,9 +470,10 @@ public class BuildScripts {
 		BufferedWriter bw = new BufferedWriter(new FileWriter(ctx.shPath));
 		bw.write("#!/bin/bash\n\n");
 		bw.write(SHVAR_SMERGE + "=./tools/merge_asm_module.sh\n");
-		bw.write(SHVAR_ASM_INCL + "=./include\n");
+		bw.write(SHVAR_INCL_DIR + "=./include\n");
 		bw.write(SHVAR_WIN_TOOL + "=./tools/wibo\n");
 		bw.write(SHVAR_PSYQ_DIR + "=./tools/psyq4.6\n\n");
+		bw.write(SHVAR_MASPSX + "=./tools/maspsx/maspsx.py\n\n");
 		bw.write("wdir=$(pwd)\n");
 		bw.write("echo -e \"Working dir: ${wdir}\"\n\n");
 		for(BuildModule mod : ctx.modules) ctx.processModuleBuild(mod, bw);

@@ -7,7 +7,9 @@ import waffleoRai_extractMyu.mains.ArcBuild;
 import waffleoRai_extractMyu.mains.ArcExtract;
 import waffleoRai_extractMyu.mains.AsmSplit;
 import waffleoRai_extractMyu.mains.BuildScripts;
+import waffleoRai_extractMyu.mains.CDCompare;
 import waffleoRai_extractMyu.mains.CheckMatch;
+import waffleoRai_extractMyu.mains.Data2C;
 import waffleoRai_extractMyu.mains.DumpBss;
 import waffleoRai_extractMyu.mains.Elf2PsxExe;
 import waffleoRai_extractMyu.mains.GenSplat;
@@ -22,7 +24,7 @@ public class Main {
 	//TODO Add options for isounpack and isopack to NOT build/unpackage archives automatically
 	//For rebuild, have option to omit the CD-DA track 2 data (though the directory entry has to be there for matching)
 	
-	//TODO Not yet implemented: genbld
+	//TODO Not yet implemented: ctxgen symhistupd symhistrpl
 	
 	public static final String TOOLNAME_UNPACK_ISO = "isounpack";
 	public static final String TOOLNAME_UNPACK_ARC = "arcunpack";
@@ -38,6 +40,12 @@ public class Main {
 	public static final String TOOLNAME_CHECKOBJ = "chkobj";
 	public static final String TOOLNAME_PSXEXE_2_ELF = "psxexe2elf";
 	public static final String TOOLNAME_ELF_2_PSXEXE = "elf2psxexe";
+	
+	public static final String TOOLNAME_DATA2C = "data2c";
+	public static final String TOOLNAME_CTXGEN = "ctxgen";
+	public static final String TOOLNAME_SYMHIST_UPDATE = "symhistupd";
+	public static final String TOOLNAME_SYMHIST_REPLACE = "symhistrpl";
+	public static final String TOOLNAME_CD_COMPARE = "cdcmp";
 	
 	public static final String TOOLNAME_TESTNATIVE = "testnative";
 	
@@ -70,15 +78,23 @@ public class Main {
 		System.err.println("\t[bss2asm] - Generate asm scripts for .bss sections");
 		System.err.println("\t[asmsplit] - Split assembly files into individual files for each function/symbol");
 		System.err.println("\t[splatyaml] - Generate a YAML file for splat input from section tsv table");
+		System.err.println("\t[data2c] - Dump data-only sections to .c files");
 		
 		System.err.println("\nPacking/Build:");
 		System.err.println("\t[isopack] - Package files into CD image");
 		System.err.println("\t[arcpack] - Package assets into binary archive or XA stream");
 		System.err.println("\t[genbld] - Generates script chain to build code binary file");
+		System.err.println("\t[elf2psxexe] - Repackage contents from an ELF file into a PSXEXE");
 		System.err.println("\t[gluetracks] - If tracks 1 and 2 were dumped as separate files, this can glue them into one bin");
+		
+		System.err.println("\nDecomp Assistance:");
+		System.err.println("\t[ctxgen] - Generate context file for decomp.me");
+		System.err.println("\t[symhistupd] - Update symbol history file from most recent symbol lists");
+		System.err.println("\t[symhistrpl] - Update symbol names in .c and .h files");
 		
 		System.err.println("\nTesting/Debug:");
 		System.err.println("\t[checkmatch] - Scan individual asset files in archive or XA stream to see if they match original");
+		System.err.println("\t[chkobj] - Compare an ELF object to original binary to find mismatches");
 		System.err.println("\t[obj2xml] - Dump the command flow of a PsyQ OBJ file to xml (Does not dump section contents)");
 		System.err.println("\t[testnative] - Check whether packager can find and load native component (liblzmu)");
 	}
@@ -104,6 +120,15 @@ public class Main {
 		System.err.println("--log\t\t[Path to log file output (Defaults to stderr)]");
 	}
 	
+	public static void printUsage_Data2C(){
+		System.err.println("MyuPackager Data 2 C ---------- ");
+		System.err.println("--xml\t\t[(Multi) Path to input xml spec]");
+		System.err.println("--input\t\t[(Single) Path to input asm (.s) file]");
+		System.err.println("--output\t\t[(Single) Path to output .c file]");
+		System.err.println("--hname\t\t[(Single) Name of header file to #include. Defaults to name of input file.]");
+		System.err.println("--log\t\t[Path to log file output (Defaults to stderr)]");
+	}
+	
 	public static void printUsage_AsmSplit(){
 		System.err.println("MyuPackager ASM Split ---------- ");
 		System.err.println("--asmdir\t\t[Path to asm base directory]");
@@ -120,6 +145,7 @@ public class Main {
 		System.err.println("--builddir\t\t[Path of directory to use for build staging]");
 		System.err.println("-match\t\tFlag: Build in match mode to try to match original image");
 		System.err.println("-buildall\t\tFlag: Rebuild all archives/streams before incorporating");
+		System.err.println("-arconly\t\tFlag: Only build archives/streams and do not package into CD image");
 		System.err.println("--log\t\t[Path to log file output (Defaults to stderr)]");
 	}
 	
@@ -155,7 +181,7 @@ public class Main {
 		System.err.println("--hout\t\t[Path to output .h file containing file enum definition]");
 		System.err.println("--cout\t\t[Path to output .c file containing offset table data]");
 		System.err.println("--log\t\t[Path to log file output (Defaults to stderr)]");
-		System.err.println("--match\t\tFlag: Try to match original file.");
+		System.err.println("-match\t\tFlag: Try to match original file.");
 	}
 	
 	public static void printUsage_CheckMatch(){
@@ -282,6 +308,12 @@ public class Main {
 			}
 			else if(tool.equalsIgnoreCase(TOOLNAME_ELF_2_PSXEXE)){
 				Elf2PsxExe.main_elf2psxexe(argmap);
+			}
+			else if(tool.equalsIgnoreCase(TOOLNAME_DATA2C)){
+				Data2C.main_data2c(argmap);
+			}
+			else if(tool.equalsIgnoreCase(TOOLNAME_CD_COMPARE)){
+				CDCompare.main_cdCompare(argmap);
 			}
 			else if(tool.equalsIgnoreCase(TOOLNAME_TESTNATIVE)){
 				testNative();

@@ -89,10 +89,10 @@ public class IsoExtract {
 		}
 		
 		if(ctx.cuePath != null) {
-			ctx.wd = ctx.cuePath.substring(0, ctx.cuePath.lastIndexOf(File.separatorChar));
+			ctx.wd = MyuArcCommon.getContainingDir(ctx.cuePath);
 		}
 		else {
-			ctx.wd = ctx.isoPath.substring(0, ctx.isoPath.lastIndexOf(File.separatorChar));	
+			ctx.wd = MyuArcCommon.getContainingDir(ctx.isoPath);
 		}
 		
 		
@@ -125,7 +125,7 @@ public class IsoExtract {
 			MyuPackagerLogger.logMessage("IsoExtract.checkArgs", 
 					"Output XML path was not provided. Setting to \"" + ctx.xmlPath + "\"");
 		}
-		else ctx.wd = ctx.xmlPath.substring(0, ctx.xmlPath.lastIndexOf(File.separator));
+		else ctx.wd = MyuArcCommon.getContainingDir(ctx.xmlPath);
 
 		return true;
 	}
@@ -194,24 +194,20 @@ public class IsoExtract {
 		long stPos = (long)fileInfo.startSector * ISO.SECSIZE;
 		long edPos = stPos + (long)fileInfo.secLen * ISO.SECSIZE;
 		FileBuffer buff = FileBuffer.createBuffer(cdPath, stPos, edPos);
-		if(fileInfo.name.equals("MOVIE.BIN")) {
+		if(fileInfo.name.equals("MOVIE.BIN") || fileInfo.name.endsWith(".STR")) {
 			//Sector coords and checksums must be CLEANSED
-			//MOVIE is Form 1 apparently
+			//VOICE.STR is Form 2
+			//MOVIE.BIN is Form1/2 hybrid because sony hates you
 			long cpos = 0;
 			for(int s = 0; s < fileInfo.secLen; s++) {
 				for(int j = 0xc; j <= 0xe; j++) buff.replaceByte((byte)0, cpos+j);
-				for(int j = 0x818; j < ISO.SECSIZE; j++) buff.replaceByte((byte)0, cpos+j);
-				cpos += ISO.SECSIZE;
-			}
-			buff.writeFile(dumpPath); buff.dispose();
-			return true;
-		}
-		else if(fileInfo.name.endsWith(".STR")) {
-			//Form 2
-			long cpos = 0;
-			for(int s = 0; s < fileInfo.secLen; s++) {
-				for(int j = 0xc; j <= 0xe; j++) buff.replaceByte((byte)0, cpos+j);
-				for(int j = 0x92c; j < ISO.SECSIZE; j++) buff.replaceByte((byte)0, cpos+j);
+				int submode = Byte.toUnsignedInt(buff.getByte(cpos+0x12));
+				if((submode & 0x20) != 0) {
+					for(int j = 0x92c; j < ISO.SECSIZE; j++) buff.replaceByte((byte)0, cpos+j);
+				}
+				else {
+					for(int j = 0x818; j < ISO.SECSIZE; j++) buff.replaceByte((byte)0, cpos+j);
+				}
 				cpos += ISO.SECSIZE;
 			}
 			buff.writeFile(dumpPath); buff.dispose();
@@ -314,6 +310,7 @@ public class IsoExtract {
 			trg.infoNode.attr.put(MyupkgConstants.XML_ATTR_FILEPERM, String.format("%d%d%d", perm_u, perm_g, perm_a));
 			trg.infoNode.attr.put(MyupkgConstants.XML_ATTR_OWNERGROUP, Integer.toString(e.getOwnerGroupID()));
 			trg.infoNode.attr.put(MyupkgConstants.XML_ATTR_OWNERUSER, Integer.toString(e.getOwnerUserID()));
+			if(e.isInterleaved()) trg.infoNode.attr.put(MyupkgConstants.XML_ATTR_INTERLEAVED, "True");
 			
 			//Value
 			if(is_arc) {

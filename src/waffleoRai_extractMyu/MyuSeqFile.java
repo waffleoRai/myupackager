@@ -5,6 +5,8 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 
 import javax.sound.midi.InvalidMidiDataException;
 
@@ -169,6 +171,16 @@ public class MyuSeqFile {
 			ctx.target_out.name = MyupkgConstants.ASSET_TYPE_SEQ;
 			ctx.target_out.value = ctx.rel_dir + "/" + filename + ".mid";
 			
+			if(!FileBuffer.directoryExists(ctx.output_dir)) {
+				try {
+					Files.createDirectories(Paths.get(ctx.output_dir));
+				} catch (IOException e) {
+					MyuPackagerLogger.logMessage("MyuSeqFile.SoundSeqHandler.exportCallback", 
+							"There was an I/O error creating output directory: " + ctx.output_dir);
+					return false;
+				}
+			}
+			
 			//Now the actual midi
 			String midi_path = ctx.output_dir + File.separator + filename + ".mid";
 			try{
@@ -198,7 +210,7 @@ public class MyuSeqFile {
 			}
 			catch(IOException ex){
 				MyuPackagerLogger.logMessage("MyuSeqFile.SoundSeqHandler.exportCallback", 
-						"There was an I/O error opening the output stream.");
+						"There was an I/O error opening the output stream: " + midi_path);
 				return false;
 			}
 			

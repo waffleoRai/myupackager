@@ -22,6 +22,7 @@ public class CDBuildContext {
 	
 	public boolean matchFlag;
 	public boolean buildAllFlag; //If set, rebuild arcs even if built copy is already there
+	public boolean arcOnlyFlag;
 	public List<WTrack> tracks;
 	//public List<LiteNode> cdFiles;
 	public LiteNode psLogoNode;

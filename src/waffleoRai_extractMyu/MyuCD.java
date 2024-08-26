@@ -16,6 +16,10 @@ import waffleoRai_Utils.MultiFileBuffer;
 
 public class MyuCD {
 	
+	public static final int SEC_OFS_SMINUTE = 0xc;
+	public static final int SEC_OFS_SSECOND = 0xd;
+	public static final int SEC_OFS_SSECTOR = 0xe;
+	
 	public static void extractPSLogo(ISOXAImage cd_image, String writePath) throws IOException {
 		FileBuffer pslogo = new MultiFileBuffer(7);
 		for(int i = 0; i < 7; i++) {
@@ -29,70 +33,100 @@ public class MyuCD {
 		pslogo.dispose();
 	}
 	
-	public static FileBuffer genDummySecBaseJ_M2F1() {
-		FileBuffer buff = new FileBuffer(ISO.SECSIZE, true);
-		for(int i = 0; i < ISO.SYNC.length; i++) buff.addToFile(ISO.SYNC[i]);
-		buff.addToFile(0x00000002); //Mode 2, leave coordinate blank for now.
-		buff.addToFile(0x00000800); //Subheader
-		buff.addToFile(0x00000800);
+	public static byte[] genDummySecBaseJ_M2F1() {
+		byte[] sec = new byte[ISO.SECSIZE];
+		for(int i = 0; i < ISO.SYNC.length; i++) sec[i] = ISO.SYNC[i];
+		sec[0xf] = 2;
+		sec[0x12] = 8;
+		sec[0x16] = 8;
 		
-		long fsize = buff.getFileSize();
-		while(fsize < 0x818) {
-			for(int i = 0; i < 0x3f; i++) buff.addToFile((byte)0x30);
-			buff.addToFile((byte)0x0a);
-			fsize += 0x40; 
+		int cpos = 0x18;
+		while(cpos < 0x818) {
+			for(int i = 0; i < 0x3f; i++) sec[cpos++] = 0x30;
+			sec[cpos++] = 0x0a;
 		}
 		
-		while(fsize < ISO.SECSIZE) {
-			buff.addToFile(FileBuffer.ZERO_BYTE);
-			fsize++;
-		}
-		
-		return buff;
+		//Defaults to zero for everything else.
+		return sec;
 	}
 	
-	public static FileBuffer genDummySecBaseI_M2F1() {
-		FileBuffer buff = new FileBuffer(ISO.SECSIZE, true);
-		for(int i = 0; i < ISO.SYNC.length; i++) buff.addToFile(ISO.SYNC[i]);
-		buff.addToFile(0x00000002); //Mode 2, leave coordinate blank for now.
-		buff.addToFile(0x00000800); //Subheader
-		buff.addToFile(0x00000800);
-		
-		long fsize = buff.getFileSize();
-		while(fsize < ISO.SECSIZE) {
-			buff.addToFile(FileBuffer.ZERO_BYTE);
-			fsize++;
-		}
-		
-		return buff;
+	public static byte[] genDummySecBaseI_M2F1() {
+		byte[] sec = new byte[ISO.SECSIZE];
+		for(int i = 0; i < ISO.SYNC.length; i++) sec[i] = ISO.SYNC[i];
+		sec[0xf] = 2;
+		sec[0x12] = 8;
+		sec[0x16] = 8;
+
+		return sec;
 	}
 	
-	public static FileBuffer genDummySecBase_M2F2() {
-		FileBuffer buff = new FileBuffer(ISO.SECSIZE, true);
-		for(int i = 0; i < ISO.SYNC.length; i++) buff.addToFile(ISO.SYNC[i]);
-		buff.addToFile(0x00000002); //Mode 2, leave coordinate blank for now.
-		buff.addToFile(0x00002000); //Subheader
-		buff.addToFile(0x00002000);
-		
-		long fsize = buff.getFileSize();
-		while(fsize < ISO.SECSIZE) {
-			buff.addToFile(FileBuffer.ZERO_BYTE);
-			fsize++;
-		}
-		
-		return buff;
+	public static byte[] genDummySecBase_M2F2() {
+		byte[] sec = new byte[ISO.SECSIZE];
+		for(int i = 0; i < ISO.SYNC.length; i++) sec[i] = ISO.SYNC[i];
+		sec[0xf] = 2;
+		sec[0x12] = 0x20;
+		sec[0x16] = 0x20;
+
+		return sec;
 	}
 	
-	public static int writeDummySecJToCDStream(OutputStream out, int absSec) throws IOException {
+	public static void resetSectorBufferM2F1I(byte[] sec) {
+		for(int i = 0xc; i < ISO.SECSIZE; i++) sec[i] = 0;
+		sec[0xf] = 2;
+		sec[0x12] = 8;
+		sec[0x16] = 8;
+	}
+	
+	public static void resetSectorBufferM2F1I(FileBuffer sec) {
+		for(int i = 0xc; i < ISO.SECSIZE; i++) sec.replaceByte((byte)0, i);
+		sec.replaceByte((byte)2, 0xfL);
+		sec.replaceByte((byte)8, 0x12L);
+		sec.replaceByte((byte)8, 0x16L);
+	}
+	
+	public static int writeDummySecsJToCDStream(OutputStream out, int startSecAbs, int count) throws IOException {
 		if(out == null) return 0;
-		FileBuffer dummy = genDummySecBaseJ_M2F1();
-		dummy.replaceByte(ISO.getBCDminute(absSec), 0xc);
-		dummy.replaceByte(ISO.getBCDsecond(absSec), 0xd);
-		dummy.replaceByte(ISO.getBCDsector(absSec), 0xe);
-		ISOUtils.updateSectorChecksumsM2F1(dummy);
+		byte[] dummy = genDummySecBaseJ_M2F1();
+
+		int written = 0;
+		for(int i = 0; i < count; i++) {
+			updateSectorNumber(dummy, startSecAbs+i);
+			ISOUtils.updateSectorChecksumsM2F1(dummy);
+			out.write(dummy);
+			written++;
+		}
+	
+		return written;
+	}
+	
+	public static int writeDummySecsIToCDStream(OutputStream out, int startSecAbs, int count) throws IOException {
+		if(out == null) return 0;
+		byte[] dummy = genDummySecBaseI_M2F1();
 		
-		dummy.writeToStream(out);
-		return 1;
+		int written = 0;
+		for(int i = 0; i < count; i++) {
+			updateSectorNumber(dummy, startSecAbs+i);
+			ISOUtils.updateSectorChecksumsM2F1(dummy);
+			out.write(dummy);
+			written++;
+		}
+	
+		return written;
+	}
+	
+	public static int writeDummySecsF2ToCDStream(OutputStream out, int startSecAbs, int count) throws IOException {
+		if(out == null) return 0;
+		byte[] dummy = genDummySecBase_M2F2();
+		
+		int written = 0;
+		for(int i = 0; i < count; i++) {
+			updateSectorNumber(dummy, startSecAbs+i);
+			ISOUtils.updateSectorChecksumsM2F2(dummy);
+			out.write(dummy);
+			written++;
+		}
+	
+		return written;
 	}
 	
 	public static int writeDataFileToCDStream_M2F1(OutputStream out, FileBuffer data, int absSec, byte fillByte, boolean flagEnd) throws IOException {
@@ -101,42 +135,26 @@ public class MyuCD {
 		if(data == null) return 0;
 		
 		int secWritten = 0;
-		FileBuffer buff = new FileBuffer(ISO.SECSIZE, true);
-		
-		//All this stuff at the top except the sector number info will be the same for every sector
-		for(int i = 0; i < ISO.SYNC.length; i++) buff.addToFile(ISO.SYNC[i]);
-		buff.addToFile(ISO.getBCDminute(absSec));
-		buff.addToFile(ISO.getBCDsecond(absSec));
-		buff.addToFile(ISO.getBCDsector(absSec));
-		buff.addToFile((byte)2); //Mode 2
-		buff.addToFile(0x00000800); //Subheader. Changes only for last sector.
-		buff.addToFile(0x00000800);
-		
-		//Fill
-		for(int i = 0x18; i < ISO.SECSIZE; i++) buff.addToFile(FileBuffer.ZERO_BYTE);
-		
+		byte[] buff = genDummySecBaseI_M2F1();
+
 		long fsize = data.getFileSize();
 		int secCount = (int)(fsize + 0x7ff) >>> 11;
 		int s = 0;
 		int spos = 0;
 		long cpos = 0;
 		for(s = 0; s < secCount; s++) {
-			if(s != 0) {
-				//Update sector info
-				updateSectorNumber(buff, absSec);
-			}
-			absSec++;
+			updateSectorNumber(buff, absSec+s);
 			
 			if(flagEnd && (s == (secCount - 1))) {
 				//Last sector
-				buff.replaceByte((byte)0x89, 0x12);
-				buff.replaceByte((byte)0x89, 0x16);
+				buff[0x12] = (byte)0x89;
+				buff[0x16] = (byte)0x89;
 			}
 			spos = 0x18;
 			
 			for(int j = 0; j < 0x800; j++) {
-				if(cpos < fsize) buff.replaceByte(data.getByte(cpos++), spos++);
-				else buff.replaceByte(fillByte, spos++);
+				if(cpos < fsize) buff[spos++] = data.getByte(cpos++);
+				else buff[spos++]= fillByte;
 			}
 			
 			//Checksums
@@ -145,50 +163,60 @@ public class MyuCD {
 				return secWritten;
 			}
 			
-			buff.writeToStream(out);
+			out.write(buff);
 			secWritten++;
 		}
 		
 		return secWritten;
 	}
 
-	public static int copyXAStreamToCD(OutputStream out, InputStream in, int startAbsSec, boolean form2) throws IOException {
+	public static int copyXAStreamToCD(OutputStream out, InputStream in, int startAbsSec) throws IOException {
 		if(out == null) return 0;
 		if(in == null) return 0;
 		
 		int startSec = startAbsSec;
 		int nowSec = startSec;
 		
-		FileBuffer buffer = new FileBuffer(ISO.SECSIZE, false);
-		for(int i = 0; i < ISO.SECSIZE; i++) buffer.addToFile(FileBuffer.ZERO_BYTE);
+		byte[] buffer = genDummySecBase_M2F2();
 		
 		boolean eof = false;
 		while(!eof) {
 			//Copy in new data
+			boolean eofzero = false;
 			for(int i = 0; i < ISO.SECSIZE; i++) {
 				if(!eof) {
 					int b = in.read();
 					if(b != -1) {
-						buffer.replaceByte((byte)b, i);
+						buffer[i] = (byte)b;
 					}
 					else {
 						eof = true;
-						buffer.replaceByte((byte)0x00, i);
+						buffer[i] = 0;
+						if(i == 0) {
+							eofzero = true;
+							break;
+						}
 					}
 				}
-				else buffer.replaceByte((byte)0x00, i);
+				else buffer[i] = 0;
+			}
+			if(eofzero) {
+				//This sector is not used.
+				break;
 			}
 			
-			//Update sector time
 			updateSectorNumber(buffer, nowSec);
+			
+			//Instead of asking if form2, check if THIS sector is form2
+			int submode = Byte.toUnsignedInt(buffer[0x12]);
+			boolean form2 = ((submode & 0x20) != 0);
 			
 			//Update checksums
 			if(form2) ISOUtils.updateSectorChecksumsM2F2(buffer);
 			else ISOUtils.updateSectorChecksumsM2F1(buffer);
 			
 			//Write
-			buffer.writeToStream(out);
-			
+			out.write(buffer);
 			nowSec++;
 		}
 		
@@ -227,6 +255,13 @@ public class MyuCD {
 		sectordat.replaceByte(ISO.getBCDminute(absSec), 0xcL);
 		sectordat.replaceByte(ISO.getBCDsecond(absSec), 0xdL);
 		sectordat.replaceByte(ISO.getBCDsector(absSec), 0xeL);
+	}
+	
+	public static void updateSectorNumber(byte[] sectordat, int absSec) {
+		if(sectordat == null) return;
+		sectordat[SEC_OFS_SMINUTE] = ISO.getBCDminute(absSec);
+		sectordat[SEC_OFS_SSECOND] = ISO.getBCDsecond(absSec);
+		sectordat[SEC_OFS_SSECTOR] = ISO.getBCDsector(absSec);
 	}
 	
 	public static int getSectorMinuteRaw(int absSec) {
@@ -271,7 +306,7 @@ public class MyuCD {
 			sct = Integer.parseInt(spl[0]);
 		}
 		
-		return (min * 60 * 75) + (scd * 60) + sct;
+		return (min * 60 * 75) + (scd * 75) + sct;
 	}
 	
 	public static CDDateTime readXMLTimestamp(String value) {
@@ -291,7 +326,7 @@ public class MyuCD {
 		cdt.setFrame(Integer.parseInt(spl1[3]));
 		
 		String tz = spl[2].replace("+", "");
-		cdt.setFrame(Integer.parseInt(tz));
+		cdt.setTimezone(Integer.parseInt(tz));
 		return cdt;
 	}
 	

@@ -13,6 +13,7 @@ import java.util.Map;
 import waffleoRai_Utils.FileBuffer;
 import waffleoRai_Utils.FileUtils;
 import waffleoRai_extractMyu.Main;
+import waffleoRai_extractMyu.MyuArcCommon;
 import waffleoRai_extractMyu.MyuCode;
 import waffleoRai_extractMyu.MyuPackagerLogger;
 import waffleoRai_extractMyu.tables.Section;
@@ -55,13 +56,13 @@ public class GenSplat {
 		
 		if(ctx.outPath == null) {
 			MyuPackagerLogger.logMessage("GenSplat.checkArgs", "WARNING: Output path was not provided.");
-			ctx.outPath = ctx.opsPath.substring(0, ctx.opsPath.lastIndexOf(File.separator)) + File.separator + "splat.yaml";
+			ctx.outPath = MyuArcCommon.getContainingDir(ctx.opsPath) + File.separator + "splat.yaml";
 			MyuPackagerLogger.logMessage("GenSplat.checkArgs", "Output set to \"" + ctx.outPath + "\"");
 		}
 		
 		if(ctx.exePath == null) {
 			MyuPackagerLogger.logMessage("GenSplat.checkArgs", "WARNING: PSXEXE path not provided. Defaulting to ${OUTPUT_DIR}/cd/SLPM_871.78");
-			ctx.outPath = ctx.outPath.substring(0, ctx.outPath.lastIndexOf(File.separator)) + File.separator + "cd" + File.separator + "SLPM_871.78";
+			ctx.outPath = MyuArcCommon.getContainingDir(ctx.outPath) + File.separator + "cd" + File.separator + "SLPM_871.78";
 		}
 		
 		if(!FileBuffer.fileExists(ctx.exePath)) {
@@ -114,7 +115,7 @@ public class GenSplat {
 		br.close();
 		
 		//Output to new yaml
-		String exefn = ctx.exePath.substring(ctx.exePath.lastIndexOf(File.separator) + 1);
+		String exefn = MyuArcCommon.getFilename(ctx.exePath);
 		BufferedWriter bw = new BufferedWriter(new FileWriter(ctx.outPath));
 		bw.write("name: " + exefn + "\n");
 		bw.write("sha1: " + hashstr + "\n");

@@ -59,6 +59,7 @@ public class IsoBuild {
 		public int groupId = 0;
 		public int userId = 0;
 		public int fileNo = 0;
+		public boolean interleaved = false;
 		public int startSec;
 		public String hash;
 		public int ver = 1; //Tacked to end of file name
@@ -76,6 +77,7 @@ public class IsoBuild {
 		ctx.src_dir = args.get("cdir");
 		ctx.matchFlag = args.containsKey("match");
 		ctx.buildAllFlag = args.containsKey("buildall");
+		ctx.arcOnlyFlag = args.containsKey("arconly");
 		
 		if(ctx.input_xml == null){
 			MyuPackagerLogger.logMessage("IsoBuild.checkArgs", 
@@ -83,7 +85,7 @@ public class IsoBuild {
 			return false;
 		}
 		
-		ctx.wd = ctx.input_xml.substring(0, ctx.input_xml.lastIndexOf(File.separator));
+		ctx.wd = MyuArcCommon.getContainingDir(ctx.input_xml);
 		if(ctx.build_dir == null) {
 			ctx.build_dir = ctx.wd + File.separator + "cd";
 			MyuPackagerLogger.logMessage("IsoBuild.checkArgs", 
@@ -134,7 +136,7 @@ public class IsoBuild {
 	
 	private static FileBuffer serializeVolDescSector(CDBuildContext ctx) {
 		if(ctx == null) return null;
-		FileBuffer buff = MyuCD.genDummySecBaseI_M2F1(); //Zero filled with headers and stuff.
+		FileBuffer buff = FileBuffer.wrap(MyuCD.genDummySecBaseI_M2F1()); //Zero filled with headers and stuff.
 		MyuCD.updateSectorNumber(buff, ctx.currentSecAbs);
 		
 		//Weird subheader flags.
@@ -191,6 +193,7 @@ public class IsoBuild {
 		}
 		else ctx.volumeTimestamp = CDDateTime.now();
 		byte[] tsBin = MyuCD.serializeDateTimeBin(ctx.volumeTimestamp);
+		tsBin[0] -= 100; //No idea why, but relative to 2000 for volume and root dir?
 		for(int i = 0; i < tsBin.length; i++) buff.replaceByte(tsBin[i], cpos++);
 		buff.replaceByte((byte)0x02, cpos++); //Flag as directory
 		cpos += 2;
@@ -227,6 +230,7 @@ public class IsoBuild {
 		for(int i = 0; i < 37; i++) buff.replaceByte((byte)0x20, cpos++); //Bibliography file name
 		
 		FileBuffer tstr = ctx.volumeTimestamp.serializeForCD();
+		tstr.replaceByte((byte)'0', 15);
 		for(int i = 0; i < 17; i++) buff.replaceByte((byte)tstr.getByte(i), cpos++);
 		for(int i = 0; i < 17; i++) buff.replaceByte((byte)tstr.getByte(i), cpos++); 
 		for(int j = 0; j < 2; j++) {
@@ -352,6 +356,8 @@ public class IsoBuild {
 				if(aval != null) trg.fileNo = Integer.parseInt(aval);
 				aval = cdfile.attr.get(MyupkgConstants.XML_ATTR_FORM);
 				if(aval != null && aval.equals("2")) trg.isForm2 = true;
+				aval = cdfile.attr.get(MyupkgConstants.XML_ATTR_INTERLEAVED);
+				if(aval != null && aval.equals("True")) trg.interleaved = true;
 				
 				trg.timestamp = MyuCD.convertFileTime(modtime);
 				if(ctx.matchFlag) {
@@ -390,12 +396,12 @@ public class IsoBuild {
 		return outlist;
 	}
 	
-	private static long writeDirEntry(FileBuffer rawSector, long cpos, WFile entry) throws IOException {
+	private static long writeDirEntry(FileBuffer rawSector, long cpos, WFile entry, boolean matchFlag) throws IOException {
 		//Don't forget to tack file version (;1) to the end of each file name.
 		String wname = entry.fileName + ";" + entry.ver;
 		int nlen = wname.length();
 		int rlen = 33 + 14 + nlen;
-		if((nlen & 0x1) != 0) rlen++;
+		if((nlen & 0x1) == 0) rlen++;
 		
 		rawSector.replaceByte((byte)rlen, cpos++);
 		rawSector.replaceByte((byte)0x00, cpos++);
@@ -408,9 +414,8 @@ public class IsoBuild {
 		}
 		rawSector.setEndian(false); rawSector.replaceInt(useSize, cpos); cpos += 4;
 		rawSector.setEndian(true); rawSector.replaceInt(useSize, cpos); cpos += 4;
-		FileBuffer tsdat = entry.timestamp.serializeForCD();
-		for(int j = 0; j < 7; j++) rawSector.replaceByte(tsdat.getByte(j), cpos++);
-		tsdat.dispose();
+		byte[] tbuff = MyuCD.serializeDateTimeBin(entry.timestamp);
+		for(int j = 0; j < 7; j++) rawSector.replaceByte(tbuff[j], cpos++);
 		
 		rawSector.replaceByte((byte)0x00, cpos++);
 		rawSector.replaceByte((byte)0x00, cpos++);
@@ -419,15 +424,19 @@ public class IsoBuild {
 		rawSector.setEndian(true); rawSector.replaceShort((short)1, cpos); cpos += 2;
 		rawSector.replaceByte((byte)nlen, cpos++);
 		for(int j = 0; j < nlen; j++) rawSector.replaceByte((byte)wname.charAt(j), cpos++);
-		if((nlen & 0x1) != 0) rawSector.replaceByte((byte)0x00, cpos++); //Pad
+		if((nlen & 0x1) == 0) rawSector.replaceByte((byte)0x00, cpos++); //Pad
 		
 		rawSector.replaceShort((short)entry.groupId, cpos); cpos += 2;
 		rawSector.replaceShort((short)entry.userId, cpos); cpos += 2;
 		int attr = entry.perm;
 		if(entry.isForm2) attr |= 0x1000;
 		if(entry.embedType != 'A') attr |= 0x0800;
-		if(entry.embedType == 'X') attr |= 0x2000;
+		if(entry.interleaved) attr |= 0x2000;
 		if(entry.embedType == 'A') attr |= 0x4000;
+		if(matchFlag && entry.isForm2) {
+			attr &= ~0x0800;
+		}
+		
 		rawSector.replaceShort((short)attr, cpos); cpos += 2;
 		
 		rawSector.replaceByte((byte)'X', cpos++);
@@ -442,7 +451,7 @@ public class IsoBuild {
 		MyuPackagerLogger.logMessage("IsoBuild.writeFileToStream", 
 				"Writing \"" + entry.fileName + "\"...");
 		
-		FileBuffer bufferSec = null;
+		byte[] bufferSec = null;
 		
 		//Write any lead-in
 		if(entry.leadInSize > 0) {
@@ -463,14 +472,14 @@ public class IsoBuild {
 							//Have to update sector number and checksums
 							long cpos = 0;
 							for(int s = 0; s < entry.leadInSize; s++) {
-								FileBuffer sec = trash.createCopy(cpos, cpos + ISO.SECSIZE);
+								byte[] sec = trash.getBytes(cpos, cpos + ISO.SECSIZE);
+								
 								MyuCD.updateSectorNumber(sec, ctx.currentSecAbs);
 								if(entry.isForm2) ISOUtils.updateSectorChecksumsM2F2(sec);
 								else ISOUtils.updateSectorChecksumsM2F1(sec);
-								sec.writeToStream(ctx.out);
+								ctx.out.write(sec);
 								cpos += ISO.SECSIZE;
 								ctx.currentSecAbs++;
-								sec.dispose();
 							}	
 						}
 						trash.dispose();
@@ -500,10 +509,9 @@ public class IsoBuild {
 						MyuCD.updateSectorNumber(bufferSec, ctx.currentSecAbs);
 						if(entry.isForm2) ISOUtils.updateSectorChecksumsM2F2(bufferSec);
 						else ISOUtils.updateSectorChecksumsM2F1(bufferSec);
-						bufferSec.writeToStream(ctx.out);
+						ctx.out.write(bufferSec);
 						ctx.currentSecAbs++;
 					}
-					bufferSec.dispose();
 				}
 			}
 		}
@@ -517,7 +525,7 @@ public class IsoBuild {
 		else if(entry.embedType == 'X') {
 			//Checksums and sector heads need to be updated
 			BufferedInputStream bis = new BufferedInputStream(new FileInputStream(entry.filePath));
-			ctx.currentSecAbs += MyuCD.copyXAStreamToCD(ctx.out, bis, ctx.currentSecAbs, entry.isForm2);
+			ctx.currentSecAbs += MyuCD.copyXAStreamToCD(ctx.out, bis, ctx.currentSecAbs);
 			bis.close();
 		}
 		else if(entry.embedType == 'A') {
@@ -533,7 +541,9 @@ public class IsoBuild {
 				}
 			}
 			bis.close();
-			while(spos++ < ISO.SECSIZE) ctx.out.write(0);
+			if(spos > 0) {
+				while(spos++ < ISO.SECSIZE) ctx.out.write(0);
+			}
 		}
 		else {
 			MyuPackagerLogger.logMessage("IsoBuild.writeFileToStream", 
@@ -554,15 +564,15 @@ public class IsoBuild {
 			else {
 				if(entry.isForm2) bufferSec = MyuCD.genDummySecBase_M2F2();
 				else bufferSec = MyuCD.genDummySecBaseI_M2F1();
+				for(int j = 0x10; j < ISO.SECSIZE; j++) bufferSec[j] = 0;
 				
 				for(int s = 0; s < entry.leadOutSize; s++) {
 					MyuCD.updateSectorNumber(bufferSec, ctx.currentSecAbs);
-					if(entry.isForm2) ISOUtils.updateSectorChecksumsM2F2(bufferSec);
-					else ISOUtils.updateSectorChecksumsM2F1(bufferSec);
-					bufferSec.writeToStream(ctx.out);
+					//if(entry.isForm2) ISOUtils.updateSectorChecksumsM2F2(bufferSec);
+					//else ISOUtils.updateSectorChecksumsM2F1(bufferSec);
+					ctx.out.write(bufferSec);
 					ctx.currentSecAbs++;
 				}
-				bufferSec.dispose();
 			}
 		}
 		
@@ -602,20 +612,16 @@ public class IsoBuild {
 	private static boolean writeCDImage(CDBuildContext ctx) throws IOException, NoSuchAlgorithmException {
 		ctx.out = new BufferedOutputStream(new FileOutputStream(ctx.output_iso));
 		
-		//Sectors 1-3 ("Empty", though J region have a weird 0x30 pattern)
-		FileBuffer secbuff = null;
-		if(ctx.region == 'J') secbuff = MyuCD.genDummySecBaseJ_M2F1();
-		else secbuff = MyuCD.genDummySecBaseI_M2F1();
-		
-		for(int i = 0; i < 4; i++) {
-			MyuCD.updateSectorNumber(secbuff, ctx.currentSecAbs);
-			ISOUtils.updateSectorChecksumsM2F1(secbuff);
-			secbuff.writeToStream(ctx.out);
-			ctx.currentSecAbs++;
-		}
+		//Sectors 0-3 ("Empty", though J region have a weird 0x30 pattern)
+		if(ctx.region == 'J') ctx.currentSecAbs += MyuCD.writeDummySecsJToCDStream(ctx.out, ctx.currentSecAbs, 4);
+		else ctx.currentSecAbs += MyuCD.writeDummySecsIToCDStream(ctx.out, ctx.currentSecAbs, 4);
 		
 		//Sector 4 (Sony tag string)
 		//Can just reuse previous dummy buffer.
+		byte[] secbuff = null;
+		if(ctx.region == 'J') secbuff = MyuCD.genDummySecBaseJ_M2F1();
+		else secbuff = MyuCD.genDummySecBaseI_M2F1();
+		
 		MyuCD.updateSectorNumber(secbuff, ctx.currentSecAbs);
 		String sonyString = null;
 		switch(ctx.region) {
@@ -624,17 +630,16 @@ public class IsoBuild {
 		case 'E': sonyString = MyuCD.getSec4String_RegionE(); break;
 		}
 		
-		long cpos = 0x18;
+		int cpos = 0x18;
 		int strlen = sonyString.length();
 		for(int i = 0; i < strlen; i++) {
-			secbuff.replaceByte((byte)sonyString.charAt(i), cpos++);
+			secbuff[cpos++] = (byte)sonyString.charAt(i);
 		}
 		ISOUtils.updateSectorChecksumsM2F1(secbuff);
-		secbuff.writeToStream(ctx.out);
+		ctx.out.write(secbuff);
 		ctx.currentSecAbs++;
 		
 		//PSLogo (Sectors 5-11)
-		secbuff = MyuCD.genDummySecBase_M2F2();
 		if(ctx.psLogoNode != null) {
 			String binpath = ctx.wd + File.separator + ctx.psLogoNode.value;
 			if(!FileBuffer.fileExists(binpath)) {
@@ -647,21 +652,11 @@ public class IsoBuild {
 		}
 		else {
 			//Just write 7 F2 dummy sectors
-			for(int i = 5; i < 12; i++) {
-				MyuCD.updateSectorNumber(secbuff, ctx.currentSecAbs);
-				ISOUtils.updateSectorChecksumsM2F2(secbuff);
-				secbuff.writeToStream(ctx.out);
-				ctx.currentSecAbs++;
-			}
+			ctx.currentSecAbs += MyuCD.writeDummySecsF2ToCDStream(ctx.out, ctx.currentSecAbs, 7);
 		}
 		
 		//Form 2 Dummy sectors (12-15)
-		for(int i = 12; i < 16; i++) {
-			MyuCD.updateSectorNumber(secbuff, ctx.currentSecAbs);
-			ISOUtils.updateSectorChecksumsM2F2(secbuff);
-			secbuff.writeToStream(ctx.out);
-			ctx.currentSecAbs++;
-		}
+		ctx.currentSecAbs += MyuCD.writeDummySecsF2ToCDStream(ctx.out, ctx.currentSecAbs, 4);
 		
 		//-------- Prepare file entries
 		
@@ -674,7 +669,7 @@ public class IsoBuild {
 			checksumTable = MyuArcCommon.loadChecksumTable(ctx.checksum_path);
 			checksumMap = checksumTable2Map(checksumTable);
 		}
-		ctx.totalSectors = ctx.baseDirSec;
+		ctx.totalSectors = ctx.baseDirSec + 1;
 		List<WFile> fileList = prepFileInfo(ctx, checksumMap);
 		Map<String, WFile> dirmap = new HashMap<String, WFile>(); //For sorting alphabetically
 		for(WFile wf : fileList) {
@@ -688,91 +683,101 @@ public class IsoBuild {
 		Collections.sort(fileNameList);
 		
 		//Volume descriptor and terminator (16-17)
-		secbuff = serializeVolDescSector(ctx);
-		secbuff.writeToStream(ctx.out);
+		FileBuffer secbuff_f = serializeVolDescSector(ctx);
+		secbuff_f.writeToStream(ctx.out);
 		ctx.currentSecAbs++;
 		
+		MyuCD.resetSectorBufferM2F1I(secbuff);
 		MyuCD.updateSectorNumber(secbuff, ctx.currentSecAbs);
-		secbuff.replaceByte((byte)0x89, 0x12L);
-		secbuff.replaceByte((byte)0x89, 0x16L);
-		secbuff.replaceByte((byte)0xFF, 0x18L);
+		secbuff[0x12] = (byte)0x89;
+		secbuff[0x16] = (byte)0x89;
+		secbuff[0x18] = (byte)0xFF;
 		cpos = 0x19;
 		strlen = CD_IDSTR.length();
 		for(int i = 0; i < strlen; i++) {
-			secbuff.replaceByte((byte)CD_IDSTR.charAt(i), cpos++);
+			secbuff[cpos++] = (byte)CD_IDSTR.charAt(i);
 		}
-		secbuff.replaceByte((byte)0x01, cpos++);
-		while(cpos < 0x818) secbuff.replaceByte((byte)0x00, cpos++);
+		secbuff[cpos++] = 0x01;
+		while(cpos < 0x818) secbuff[cpos++] = 0x00;
 		ISOUtils.updateSectorChecksumsM2F1(secbuff);
-		secbuff.writeToStream(ctx.out);
+		ctx.out.write(secbuff);
 		ctx.currentSecAbs++;	
 		
 		//Path tables (18-21)
-		MyuCD.updateSectorNumber(secbuff, ctx.currentSecAbs);
+		MyuCD.resetSectorBufferM2F1I(secbuff_f);
+		MyuCD.updateSectorNumber(secbuff_f, ctx.currentSecAbs);
+		secbuff_f.replaceByte((byte)0x89, 0x12L);
+		secbuff_f.replaceByte((byte)0x89, 0x16L);
 		cpos = 0x18;
-		secbuff.setEndian(false);
-		secbuff.replaceByte((byte)0x01, cpos++);
-		secbuff.replaceByte((byte)0x00, cpos++);
-		secbuff.replaceInt(ctx.baseDirSec, cpos); cpos += 4;
-		secbuff.replaceShort((short)1, cpos); cpos += 2; //Remainder should be 0\
-		ISOUtils.updateSectorChecksumsM2F1(secbuff);
-		secbuff.writeToStream(ctx.out);
+		secbuff_f.setEndian(false);
+		secbuff_f.replaceByte((byte)0x01, cpos++);
+		secbuff_f.replaceByte((byte)0x00, cpos++);
+		secbuff_f.replaceInt(ctx.baseDirSec, cpos); cpos += 4;
+		secbuff_f.replaceShort((short)1, cpos); cpos += 2; //Remainder should be 0\
+		ISOUtils.updateSectorChecksumsM2F1(secbuff_f);
+		secbuff_f.writeToStream(ctx.out);
 		ctx.currentSecAbs++;
-		MyuCD.updateSectorNumber(secbuff, ctx.currentSecAbs);
-		secbuff.writeToStream(ctx.out);
+		MyuCD.updateSectorNumber(secbuff_f, ctx.currentSecAbs);
+		secbuff_f.writeToStream(ctx.out);
 		ctx.currentSecAbs++;
 		
-		MyuCD.updateSectorNumber(secbuff, ctx.currentSecAbs);
-		cpos = 0x1a;
-		secbuff.setEndian(true);
-		secbuff.replaceInt(ctx.baseDirSec, cpos); cpos += 4;
-		secbuff.replaceShort((short)1, cpos); cpos += 2;
-		ISOUtils.updateSectorChecksumsM2F1(secbuff);
-		secbuff.writeToStream(ctx.out);
+		MyuCD.resetSectorBufferM2F1I(secbuff_f);
+		MyuCD.updateSectorNumber(secbuff_f, ctx.currentSecAbs);
+		secbuff_f.replaceByte((byte)0x89, 0x12L);
+		secbuff_f.replaceByte((byte)0x89, 0x16L);
+		cpos = 0x18;
+		secbuff_f.setEndian(true);
+		secbuff_f.replaceByte((byte)0x01, cpos++);
+		secbuff_f.replaceByte((byte)0x00, cpos++);
+		secbuff_f.replaceInt(ctx.baseDirSec, cpos); cpos += 4;
+		secbuff_f.replaceShort((short)1, cpos); cpos += 2;
+		ISOUtils.updateSectorChecksumsM2F1(secbuff_f);
+		secbuff_f.writeToStream(ctx.out);
 		ctx.currentSecAbs++;
-		MyuCD.updateSectorNumber(secbuff, ctx.currentSecAbs);
-		secbuff.writeToStream(ctx.out);
+		MyuCD.updateSectorNumber(secbuff_f, ctx.currentSecAbs);
+		secbuff_f.writeToStream(ctx.out);
 		ctx.currentSecAbs++;
 		
 		//Base directory (22)
 			// First two entries are basically . and ..
 			// Their names are just 0x00 and 0x01 (non ASCII)
 			// What even is .. for a root?
-		MyuCD.updateSectorNumber(secbuff, ctx.currentSecAbs);
-		secbuff.replaceByte((byte)0x89, 0x12L);
-		secbuff.replaceByte((byte)0x89, 0x16L);
+		MyuCD.resetSectorBufferM2F1I(secbuff_f);
+		MyuCD.updateSectorNumber(secbuff_f, ctx.currentSecAbs);
+		secbuff_f.replaceByte((byte)0x89, 0x12L);
+		secbuff_f.replaceByte((byte)0x89, 0x16L);
 		cpos = 0x18;
 		for(int i = 0; i < 2; i++) {
-			secbuff.replaceByte((byte)0x30, cpos++);
-			secbuff.replaceByte((byte)0x00, cpos++);
-			secbuff.setEndian(false); secbuff.replaceInt(ctx.baseDirSec, cpos); cpos += 4;
-			secbuff.setEndian(true); secbuff.replaceInt(ctx.baseDirSec, cpos); cpos += 4;
-			secbuff.setEndian(false); secbuff.replaceInt(ISO.F1SIZE, cpos); cpos += 4;
-			secbuff.setEndian(true); secbuff.replaceInt(ISO.F1SIZE, cpos); cpos += 4;
-			FileBuffer tbuff = ctx.volumeTimestamp.serializeForCD();
-			for(int j = 0; j < 7; j++) secbuff.replaceByte(tbuff.getByte(j), cpos++);
-			tbuff.dispose();
-			secbuff.replaceByte((byte)0x02, cpos++);
-			secbuff.replaceByte((byte)0x00, cpos++);
-			secbuff.replaceByte((byte)0x00, cpos++);
-			secbuff.setEndian(false); secbuff.replaceShort((short)1, cpos); cpos += 2;
-			secbuff.setEndian(true); secbuff.replaceShort((short)1, cpos); cpos += 2;
-			secbuff.replaceByte((byte)0x01, cpos++);
-			secbuff.replaceByte((byte)i, cpos++);
-			secbuff.replaceShort((short)0, cpos); cpos += 2;
-			secbuff.replaceShort((short)0, cpos); cpos += 2;
-			secbuff.replaceInt(0x8d55, cpos); cpos += 4;
-			secbuff.replaceByte((byte)'X', cpos++);
-			secbuff.replaceByte((byte)'A', cpos++);
-			for(int j = 0; j < 6; j++) secbuff.replaceByte((byte)0x00, cpos++);
+			secbuff_f.replaceByte((byte)0x30, cpos++);
+			secbuff_f.replaceByte((byte)0x00, cpos++);
+			secbuff_f.setEndian(false); secbuff_f.replaceInt(ctx.baseDirSec, cpos); cpos += 4;
+			secbuff_f.setEndian(true); secbuff_f.replaceInt(ctx.baseDirSec, cpos); cpos += 4;
+			secbuff_f.setEndian(false); secbuff_f.replaceInt(ISO.F1SIZE, cpos); cpos += 4;
+			secbuff_f.setEndian(true); secbuff_f.replaceInt(ISO.F1SIZE, cpos); cpos += 4;
+			byte[] tbuff = MyuCD.serializeDateTimeBin(ctx.volumeTimestamp);
+			tbuff[0] -= 100;
+			for(int j = 0; j < 7; j++) secbuff_f.replaceByte(tbuff[j], cpos++);
+			secbuff_f.replaceByte((byte)0x02, cpos++);
+			secbuff_f.replaceByte((byte)0x00, cpos++);
+			secbuff_f.replaceByte((byte)0x00, cpos++);
+			secbuff_f.setEndian(false); secbuff_f.replaceShort((short)1, cpos); cpos += 2;
+			secbuff_f.setEndian(true); secbuff_f.replaceShort((short)1, cpos); cpos += 2;
+			secbuff_f.replaceByte((byte)0x01, cpos++);
+			secbuff_f.replaceByte((byte)i, cpos++);
+			secbuff_f.replaceShort((short)0, cpos); cpos += 2;
+			secbuff_f.replaceShort((short)0, cpos); cpos += 2;
+			secbuff_f.replaceShort((short)0x8d55, cpos); cpos += 2;
+			secbuff_f.replaceByte((byte)'X', cpos++);
+			secbuff_f.replaceByte((byte)'A', cpos++);
+			for(int j = 0; j < 6; j++) secbuff_f.replaceByte((byte)0x00, cpos++);
 		}
 		for(String fileName : fileNameList) {
 			WFile fileInfo = dirmap.get(fileName);
-			cpos += writeDirEntry(secbuff, cpos, fileInfo);
+			cpos += writeDirEntry(secbuff_f, cpos, fileInfo, ctx.matchFlag);
 		}
-		while(cpos < 0x818) secbuff.replaceByte((byte)0x00, cpos++);
-		ISOUtils.updateSectorChecksumsM2F1(secbuff);
-		secbuff.writeToStream(ctx.out);
+		while(cpos < 0x818) secbuff_f.replaceByte((byte)0x00, cpos++);
+		ISOUtils.updateSectorChecksumsM2F1(secbuff_f);
+		secbuff_f.writeToStream(ctx.out);
 		ctx.currentSecAbs++;
 		
 		//Files (23+)
@@ -804,6 +809,7 @@ public class IsoBuild {
 		if(ctx.matchFlag && (checksumMap != null)) {
 			String trghash = checksumMap.get("SLPM87176.iso");
 			if(trghash != null) {
+				trghash = trghash.toLowerCase();
 				MyuPackagerLogger.logMessage("IsoBuild.writeCDImage", 
 						"\tTarget hash: " + trghash);
 				if(trghash.equals(fullhash)) {
@@ -811,12 +817,12 @@ public class IsoBuild {
 							"\t[O] Image hash matches!");
 				}
 				else {
+					//TODO Check against other possible images? Like SLPM87178?
 					MyuPackagerLogger.logMessage("IsoBuild.writeCDImage", 
 							"\t[X] CD image match failed...");
 				}
 			}
 		}
-		
 		
 		return true;
 	}
@@ -938,7 +944,7 @@ public class IsoBuild {
 						}
 					}
 					else {
-						if(!FileBuffer.fileExists(abspath)) {
+						if(!ctx.arcOnlyFlag && !FileBuffer.fileExists(abspath)) {
 							MyuPackagerLogger.logMessage("IsoBuild.main_isoPack", 
 									"Included file \"" + abspath + "\" could not be found. Exiting!");
 							System.exit(1);
@@ -946,6 +952,8 @@ public class IsoBuild {
 					}
 				}	
 			}
+			
+			if(ctx.arcOnlyFlag) return;
 			
 			//Start writing to the CD output
 			if(!writeCDImage(ctx)) {

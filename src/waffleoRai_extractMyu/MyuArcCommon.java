@@ -456,6 +456,16 @@ public class MyuArcCommon {
 		return sb.toString();
 	}
 	
+	public static String getContainingDir(String path) {
+		if(!path.contains(File.separator)) return ".";
+		return path.substring(0, path.lastIndexOf(File.separator));
+	}
+	
+	public static String getFilename(String path) {
+		if(!path.contains(File.separator)) return path;
+		return path.substring(path.lastIndexOf(File.separator)+1);
+	}
+	
 	public static String localPath2UnixRel(String ref_path, String trg_path) {
 		//Unix style relative path for trg_path relative to ref_path
 		//if ref_path is a file, strip to parent directory

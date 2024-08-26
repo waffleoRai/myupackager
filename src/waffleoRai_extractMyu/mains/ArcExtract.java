@@ -82,9 +82,11 @@ public class ArcExtract {
 		ArrayList<LiteNode> import_files = new ArrayList<LiteNode>(file_count+1);
 		
 		if(arcname == null){
-			arcname = actx.input_path.substring(actx.input_path.lastIndexOf(File.separatorChar) + 1);
+			arcname = MyuArcCommon.getFilename(actx.input_path);
 			arcname = arcname.replace("D_", "");
-			arcname = arcname.substring(0, arcname.indexOf('.'));
+			if(arcname.contains(".")) {
+				arcname = arcname.substring(0, arcname.indexOf('.'));
+			}
 		}
 		String arcname_c = StringUtils.capitalize(arcname.toLowerCase());
 		String fftpath = null;
@@ -131,7 +133,7 @@ public class ArcExtract {
 			
 			aval = actx.arcspec.attr.get(MyupkgConstants.XML_ATTR_FFLTBLPATH);
 			if(aval != null){
-				String specdir = actx.spec_path.substring(0, actx.spec_path.lastIndexOf(File.separator));
+				String specdir = MyuArcCommon.getContainingDir(actx.spec_path);
 				fftpath = MyuArcCommon.unixRelPath2Local(specdir, aval);
 				fftpath = MyuArcCommon.localPath2UnixRel(actx.xml_path, fftpath);
 			}
@@ -182,11 +184,11 @@ public class ArcExtract {
 		ctx.secAlignMode = forceSecAlign;
 		if(actx.arcspec != null) {
 			if(actx.spec_path != null) {
-				ctx.arcspec_wd = actx.spec_path.substring(0, actx.spec_path.lastIndexOf(File.separatorChar));
+				ctx.arcspec_wd = MyuArcCommon.getContainingDir(actx.spec_path);
 			}
 		}
 		if(actx.xml_path != null) {
-			ctx.xml_wd = actx.xml_path.substring(0, actx.xml_path.lastIndexOf(File.separatorChar));
+			ctx.xml_wd = MyuArcCommon.getContainingDir(actx.xml_path);
 		}
 		for(int i = 0; i < file_count; i++){
 			int filesize = 0;

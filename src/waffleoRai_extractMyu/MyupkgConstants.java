@@ -53,6 +53,7 @@ public class MyupkgConstants {
 	public static final String XML_ATTR_FILEPERM = "Permissions";
 	public static final String XML_ATTR_OWNERGROUP = "OwnerGroupID";
 	public static final String XML_ATTR_OWNERUSER = "OwnerUserID";
+	public static final String XML_ATTR_INTERLEAVED = "IsInterleaved";
 	public static final String XML_ATTR_EMBEDTYPE = "EmbedType";
 	public static final String XML_ATTR_LEADIN = "LeadIn";
 	public static final String XML_ATTR_LEADINGARBAGE = "LeadInGarbage";
