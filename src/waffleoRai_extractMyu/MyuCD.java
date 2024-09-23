@@ -6,11 +6,13 @@ import java.io.OutputStream;
 import java.nio.file.attribute.FileTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.util.Arrays;
 
 import waffleoRai_Containers.CDDateTime;
 import waffleoRai_Containers.ISO;
 import waffleoRai_Containers.ISOUtils;
 import waffleoRai_Containers.ISOXAImage;
+import waffleoRai_Sound.psx.PSXXAAudio;
 import waffleoRai_Utils.FileBuffer;
 import waffleoRai_Utils.MultiFileBuffer;
 
@@ -68,6 +70,20 @@ public class MyuCD {
 		sec[0x16] = 0x20;
 
 		return sec;
+	}
+	
+	public static void loadEmptyXAAudSec(byte[] sec) {
+		Arrays.fill(sec, (byte)0);
+		for(int i = 0; i < ISO.SYNC.length; i++) sec[i] = ISO.SYNC[i];
+		sec[0xf] = 2;
+		sec[0x12] = 0x20;
+		sec[0x16] = 0x20;
+		
+		int pos = 0x18;
+		for(int i = 0; i < PSXXAAudio.BLOCKS_PER_SEC; i++) {
+			for(int j = 0; j < 0x10; j++) sec[pos++] = 0x0c;
+			for(int j = 0; j < 0x70; j++) sec[pos++] = 0x00;
+		}
 	}
 	
 	public static void resetSectorBufferM2F1I(byte[] sec) {

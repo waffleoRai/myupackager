@@ -6,20 +6,23 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Map;
+import java.util.Map.Entry;
 
+import waffleoRai_Files.tree.FileNode;
+import waffleoRai_Sound.psx.PSXXAStream;
 import waffleoRai_Utils.FileBuffer;
+import waffleoRai_Utils.FileBuffer.UnsupportedFileTypeException;
 import waffleoRai_Utils.StringUtils;
 import waffleoRai_extractMyu.ExportContext;
 import waffleoRai_extractMyu.LiteNode;
+import waffleoRai_extractMyu.MdecMovieHandler;
 import waffleoRai_extractMyu.MyuArcCommon;
 import waffleoRai_extractMyu.MyuPackagerLogger;
 import waffleoRai_extractMyu.MyupkgConstants;
 import waffleoRai_extractMyu.TypeHandler;
+import waffleoRai_extractMyu.XAAudioHandler;
 
 public class ArcExtract {
-	
-	//TODO Relative paths in xml file should either be relative to project dir or the xml file itself (I like the latter)! 
-	//	They are not at the moment.
 	
 	public static class ArcExtractContext{
 		public String input_path;
@@ -29,6 +32,9 @@ public class ArcExtract {
 		public int flags;
 		public String rel_path;
 		public LiteNode arcspec;
+		
+		public PSXXAStream stream; //Only for XA
+		//public FileBuffer inputFile; //Only for XA
 	}
 	
 	private static boolean checkArgs(ArcExtractContext ctx) throws IOException {
@@ -59,6 +65,65 @@ public class ArcExtract {
 		}
 		
 		return true;
+	}
+	
+	private static void unpackXAClipGroup(ArcExtractContext actx, LiteNode node, LiteNode outParent) throws IOException, UnsupportedFileTypeException {
+		if(node.name == null) return;
+		if(!node.name.equals(MyupkgConstants.ASSET_TYPE_CLIPGROUP)) return;
+		
+		LiteNode xmlOut = outParent.newChild(MyupkgConstants.ASSET_TYPE_CLIPGROUP);
+		for(Entry<String, String> entry : node.attr.entrySet()) {
+			xmlOut.attr.put(entry.getKey(), entry.getValue());
+		}
+		
+		String groupName = node.attr.get(MyupkgConstants.XML_ATTR_NAME);
+		if(groupName == null) {
+			groupName = String.format("CLIPGROUP_%04X", outParent.children.size() - 1);
+			xmlOut.attr.put(MyupkgConstants.XML_ATTR_FILENAME, groupName);
+		}
+		MyuPackagerLogger.logMessage("ArcExtract.unpackXAClipGroup", 
+				"Working on clip group " + groupName + "...");
+		
+		String groupOutDir = actx.output_dir + File.separator + groupName;
+		if(!FileBuffer.directoryExists(groupOutDir)) {
+			Files.createDirectories(Paths.get(groupOutDir));
+		}
+		
+		ExportContext ctx = new ExportContext();
+		ctx.rel_dir = actx.rel_path + "/" + groupOutDir;
+		ctx.global_flags = actx.flags;
+		ctx.output_dir = groupOutDir;
+		ctx.secAlignMode = 0;
+		if(actx.arcspec != null) {
+			if(actx.spec_path != null) {
+				ctx.arcspec_wd = MyuArcCommon.getContainingDir(actx.spec_path);
+			}
+		}
+		if(actx.xml_path != null) {
+			ctx.xml_wd = MyuArcCommon.getContainingDir(actx.xml_path);
+		}
+		
+		ctx.xaStr = actx.stream;
+		
+		for(LiteNode child : node.children) {
+			if(child.name == null) continue;
+			ctx.target_in = child;
+			ctx.target_out = xmlOut.newChild(child.name);
+			
+			if(child.name.equals(MyupkgConstants.FTYPE_XAAUDIO)) {
+				ctx.target_out.name = MyupkgConstants.ASSET_TYPE_XAAUDIO;
+				XAAudioHandler.export(ctx);
+			}
+			else if(child.name.equals(MyupkgConstants.FTYPE_XAMOVIE)) {
+				ctx.target_out.name = MyupkgConstants.ASSET_TYPE_XAMOVIE;
+				MdecMovieHandler.export(ctx);
+			}
+			else {
+				MyuPackagerLogger.logMessage("ArcExtract.unpackXAClipGroup", 
+						"File type \"" + child.name + "\" not recognized. Skipping...");
+			}
+		}
+		
 	}
 	
 	public static void unpackTrueArchive(ArcExtractContext actx) throws IOException{
@@ -264,11 +329,100 @@ public class ArcExtract {
 		MyuArcCommon.writeXML(actx.xml_path, export_root);
 	}
 	
-	public static void unpackXAStream(ArcExtractContext actx) throws IOException{
-		//TODO
+	public static void unpackXAStream(ArcExtractContext actx) throws IOException, UnsupportedFileTypeException{
+		if(!FileBuffer.fileExists(actx.spec_path)){
+			MyuPackagerLogger.logMessage("ArcExtract.unpackXAStream", 
+					"XA stream cannot be split without spec!");
+			return;
+		}
+		
+		LiteNode import_root = actx.arcspec;
+		String arcname = import_root.attr.get(MyupkgConstants.XML_ATTR_NAME);
+		String enumName = import_root.attr.get(MyupkgConstants.XML_ATTR_ENUM);
+		if(enumName == null) {
+			enumName = arcname.toLowerCase();
+			enumName = StringUtils.capitalize(enumName);
+		}
+		
+		LiteNode export_root = new LiteNode();
+		export_root.name = "MyuArchive";
+		export_root.attr.put(MyupkgConstants.XML_ATTR_NAME, arcname.toUpperCase());
+		export_root.attr.put(MyupkgConstants.XML_ATTR_ENUM, enumName);
+		export_root.attr.put(MyupkgConstants.XML_ATTR_ISXASTR, "True");
+		
+		String aval = import_root.attr.get(MyupkgConstants.XML_ATTR_AUDCH);
+		if(aval != null) export_root.attr.put(MyupkgConstants.XML_ATTR_AUDCH, aval);
+		aval = import_root.attr.get(MyupkgConstants.XML_ATTR_IS_STEREO);
+		if(aval != null) export_root.attr.put(MyupkgConstants.XML_ATTR_IS_STEREO, aval);
+		aval = import_root.attr.get(MyupkgConstants.XML_ATTR_SAMPLERATE);
+		if(aval != null) export_root.attr.put(MyupkgConstants.XML_ATTR_SAMPLERATE, aval);
+		aval = import_root.attr.get(MyupkgConstants.XML_ATTR_BITDEPTH);
+		if(aval != null) export_root.attr.put(MyupkgConstants.XML_ATTR_BITDEPTH, aval);
+		aval = import_root.attr.get(MyupkgConstants.XML_ATTR_DBLSPEED);
+		if(aval != null) export_root.attr.put(MyupkgConstants.XML_ATTR_DBLSPEED, aval);
+		aval = import_root.attr.get(MyupkgConstants.XML_ATTR_ASTREAM);
+		if(aval != null) export_root.attr.put(MyupkgConstants.XML_ATTR_ASTREAM, aval);
+		aval = import_root.attr.get(MyupkgConstants.XML_ATTR_VSTREAM);
+		if(aval != null) export_root.attr.put(MyupkgConstants.XML_ATTR_VSTREAM, aval);
+		
+		aval = import_root.attr.get(MyupkgConstants.XML_ATTR_TBLNAME_GRP);
+		if(aval != null) export_root.attr.put(MyupkgConstants.XML_ATTR_TBLNAME_GRP, aval);
+		aval = import_root.attr.get(MyupkgConstants.XML_ATTR_TBLNAME_CLIP);
+		if(aval != null) export_root.attr.put(MyupkgConstants.XML_ATTR_TBLNAME_CLIP, aval);
+		
+		aval = import_root.attr.get(MyupkgConstants.XML_ATTR_CMERGE);
+		if(aval != null) {
+			aval = MyuArcCommon.unixRelPath2Local(MyuArcCommon.getContainingDir(actx.spec_path), aval);
+			aval = MyuArcCommon.localPath2UnixRel(actx.xml_path, aval);
+			export_root.attr.put(MyupkgConstants.XML_ATTR_CMERGE, aval);
+		}
+		
+		ExportContext ctx = new ExportContext();
+		ctx.rel_dir = actx.rel_path;
+		ctx.global_flags = actx.flags;
+		ctx.output_dir = actx.output_dir;
+		ctx.secAlignMode = 0;
+		if(actx.arcspec != null) {
+			if(actx.spec_path != null) {
+				ctx.arcspec_wd = MyuArcCommon.getContainingDir(actx.spec_path);
+			}
+		}
+		if(actx.xml_path != null) {
+			ctx.xml_wd = MyuArcCommon.getContainingDir(actx.xml_path);
+		}
+		
+		FileNode strnode = new FileNode(null, "xastream");
+		strnode.setSourcePath(actx.input_path);
+		strnode.setOffset(0L);
+		strnode.setLength(FileBuffer.fileSize(actx.input_path));
+		actx.stream = PSXXAStream.readStream(strnode);
+		ctx.xaStr = actx.stream;
+		
+		for(LiteNode child : import_root.children) {
+			if(child.name == null) continue;
+			if(child.name.equals(MyupkgConstants.ASSET_TYPE_CLIPGROUP)) {
+				unpackXAClipGroup(actx, child, export_root);
+			}
+			else if(child.name.equals(MyupkgConstants.FTYPE_XAAUDIO)) {
+				ctx.target_in = child;
+				ctx.target_out = export_root.newChild(MyupkgConstants.ASSET_TYPE_XAAUDIO);
+				XAAudioHandler.export(ctx);
+			}
+			else if(child.name.equals(MyupkgConstants.FTYPE_XAMOVIE)) {
+				ctx.target_in = child;
+				ctx.target_out = export_root.newChild(MyupkgConstants.ASSET_TYPE_XAMOVIE);
+				MdecMovieHandler.export(ctx);
+			}
+			else {
+				MyuPackagerLogger.logMessage("ArcExtract.unpackXAStream", 
+						"Node type \"" + child.name + "\" not recognized! Skipping...");
+			}
+		}
+
+		MyuArcCommon.writeXML(actx.xml_path, export_root);
 	}
 	
-	public static void unpackArchive(ArcExtractContext actx) throws IOException{
+	public static void unpackArchive(ArcExtractContext actx) throws IOException, UnsupportedFileTypeException{
 		if(FileBuffer.fileExists(actx.spec_path)){
 			actx.arcspec = MyuArcCommon.readXML(actx.spec_path);
 			//See if it's flagged XA stream or not.
@@ -288,7 +442,7 @@ public class ArcExtract {
 		}
 	}
 	
-	public static void main_arcUnpack(Map<String, String> args, String rel_path) throws IOException{
+	public static void main_arcUnpack(Map<String, String> args, String rel_path) throws IOException, UnsupportedFileTypeException{
 		ArcExtractContext actx = new ArcExtractContext();
 		actx.input_path = args.get("input");
 		actx.output_dir = args.get("output");

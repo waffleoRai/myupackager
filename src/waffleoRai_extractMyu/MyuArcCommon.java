@@ -6,6 +6,8 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -466,6 +468,12 @@ public class MyuArcCommon {
 		return path.substring(path.lastIndexOf(File.separator)+1);
 	}
 	
+	public static String getSystemAbsolutePath(String relPath) {
+		if(relPath == null) return null;
+		Path p = Paths.get(relPath);
+		return p.toAbsolutePath().toString();
+	}
+	
 	public static String localPath2UnixRel(String ref_path, String trg_path) {
 		//Unix style relative path for trg_path relative to ref_path
 		//if ref_path is a file, strip to parent directory
@@ -473,6 +481,9 @@ public class MyuArcCommon {
 			int cidx = ref_path.lastIndexOf(File.separatorChar);
 			if(cidx >= 0) ref_path = ref_path.substring(0, cidx);
 		}
+		
+		if(!ref_path.contains(File.separator)) ref_path = "." + File.separator + ref_path;
+		if(!trg_path.contains(File.separator)) trg_path = "." + File.separator + trg_path;
 		
 		String SEP = File.separator;
 		if(File.separatorChar == '\\') {
@@ -565,6 +576,20 @@ public class MyuArcCommon {
 		list2.clear();
 		
 		return sb.toString();
+	}
+	
+	public static int parseInt(String str) {
+		if(str.startsWith("0x")) {
+			return Integer.parseUnsignedInt(str.substring(2), 16);
+		}
+		else return Integer.parseInt(str);
+	}
+	
+	public static long parseLong(String str) {
+		if(str.startsWith("0x")) {
+			return Long.parseUnsignedLong(str.substring(2), 16);
+		}
+		else return Long.parseLong(str);
 	}
 	
 }

@@ -10,6 +10,7 @@ public class LzNative {
 		//For this to work, the so/dll must be on Java's libpath for this run
 		try {
 			System.loadLibrary("lzmu");
+			//System.load("/mnt/d/usr/bghos/code/GitHub/tmmpsx-re/tools/myu_packager/liblzmu.so");
 			libLoaded = true;
 		}
 		catch(Exception ex) {

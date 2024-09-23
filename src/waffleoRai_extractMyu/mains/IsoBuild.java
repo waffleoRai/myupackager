@@ -843,10 +843,12 @@ public class IsoBuild {
 			}
 			else ctx.region = 'U';
 			
-			String input_dir = ctx.input_xml.substring(0, ctx.input_xml.lastIndexOf(File.separator));
+			String input_dir = MyuArcCommon.getContainingDir(ctx.input_xml);
 			if(ctx.build_dir == null) {
 				ctx.build_dir = input_dir + File.separator + "cd";
 			}
+			MyuPackagerLogger.logMessage("IsoBuild.main_isoPack", 
+					"Input directory: " + input_dir);
 			
 			//Find CD files
 			//These have been moved into CdTrack nodes. Update.

@@ -299,7 +299,21 @@ public class Data2C {
 				}
 				else if(structDefs.containsKey(symType)) {
 					//Defined struct
-					//TODO
+					StructDef def = structDefs.get(symType);
+					sizeBytes *= def.size;
+					FileBuffer rawdat = asmLines2Bin(mctSym, sizeBytes);
+					rawdat.setCurrentPosition(0L);
+					List<String> elements = new ArrayList<String>(elementCount);
+					byte[] buffer = new byte[def.size];
+					while(rawdat.bytesRemaining() >= def.size) {
+						for(int i = 0; i < def.size; i++) {
+							buffer[i] = rawdat.nextByte();
+						}
+						String el = def.toC(buffer);
+						elements.add(el);
+					}
+					
+					printSymbolToCFile(bw, mctSym.address, symName, symType, elements, def.perLine);
 				}
 				else {
 					//Assumed integral, but if not then throw error.
@@ -388,7 +402,8 @@ public class Data2C {
 				return;
 			}
 			else if(node.name.equals("StructDef")) {
-				//TODO
+				StructDef def = StructDef.fromXMLNode(node);
+				structDefs.put(def.name, def);
 				return;
 			}
 		}

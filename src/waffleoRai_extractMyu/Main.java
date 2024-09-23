@@ -9,6 +9,7 @@ import waffleoRai_extractMyu.mains.AsmSplit;
 import waffleoRai_extractMyu.mains.BuildScripts;
 import waffleoRai_extractMyu.mains.CDCompare;
 import waffleoRai_extractMyu.mains.CheckMatch;
+import waffleoRai_extractMyu.mains.CtxGen;
 import waffleoRai_extractMyu.mains.Data2C;
 import waffleoRai_extractMyu.mains.DumpBss;
 import waffleoRai_extractMyu.mains.Elf2PsxExe;
@@ -16,7 +17,11 @@ import waffleoRai_extractMyu.mains.GenSplat;
 import waffleoRai_extractMyu.mains.IsoBuild;
 import waffleoRai_extractMyu.mains.IsoExtract;
 import waffleoRai_extractMyu.mains.ObjCheck;
+import waffleoRai_extractMyu.mains.PCMMe;
 import waffleoRai_extractMyu.mains.PsyqObjDumper;
+import waffleoRai_extractMyu.mains.Rmjrra;
+import waffleoRai_extractMyu.mains.SpuEnc;
+import waffleoRai_extractMyu.mains.SymbolHist;
 import waffleoRai_extractMyu.mains.TrackGlue;
 
 public class Main {
@@ -24,7 +29,7 @@ public class Main {
 	//TODO Add options for isounpack and isopack to NOT build/unpackage archives automatically
 	//For rebuild, have option to omit the CD-DA track 2 data (though the directory entry has to be there for matching)
 	
-	//TODO Not yet implemented: ctxgen symhistupd symhistrpl
+	//TODO Not yet implemented:
 	
 	public static final String TOOLNAME_UNPACK_ISO = "isounpack";
 	public static final String TOOLNAME_UNPACK_ARC = "arcunpack";
@@ -40,12 +45,16 @@ public class Main {
 	public static final String TOOLNAME_CHECKOBJ = "chkobj";
 	public static final String TOOLNAME_PSXEXE_2_ELF = "psxexe2elf";
 	public static final String TOOLNAME_ELF_2_PSXEXE = "elf2psxexe";
+	public static final String TOOLNAME_PCM_ME = "pcmme"; //For VAG/ADPCM decoding
+	public static final String TOOLNAME_SPUENC = "spuenc"; //For VAG/ADPCM encoding
 	
 	public static final String TOOLNAME_DATA2C = "data2c";
 	public static final String TOOLNAME_CTXGEN = "ctxgen";
 	public static final String TOOLNAME_SYMHIST_UPDATE = "symhistupd";
 	public static final String TOOLNAME_SYMHIST_REPLACE = "symhistrpl";
 	public static final String TOOLNAME_CD_COMPARE = "cdcmp";
+	
+	public static final String TOOLNAME_RM_DUMMY_RET = "rmjrra";
 	
 	public static final String TOOLNAME_TESTNATIVE = "testnative";
 	
@@ -79,6 +88,7 @@ public class Main {
 		System.err.println("\t[asmsplit] - Split assembly files into individual files for each function/symbol");
 		System.err.println("\t[splatyaml] - Generate a YAML file for splat input from section tsv table");
 		System.err.println("\t[data2c] - Dump data-only sections to .c files");
+		System.err.println("\t[pcmme] - Convert a PSX ADPCM audio clip to PCM (wav or aiff)");
 		
 		System.err.println("\nPacking/Build:");
 		System.err.println("\t[isopack] - Package files into CD image");
@@ -86,6 +96,7 @@ public class Main {
 		System.err.println("\t[genbld] - Generates script chain to build code binary file");
 		System.err.println("\t[elf2psxexe] - Repackage contents from an ELF file into a PSXEXE");
 		System.err.println("\t[gluetracks] - If tracks 1 and 2 were dumped as separate files, this can glue them into one bin");
+		System.err.println("\t[spuenc] - Encode a PCM audio file as PSX ADPCM");
 		
 		System.err.println("\nDecomp Assistance:");
 		System.err.println("\t[ctxgen] - Generate context file for decomp.me");
@@ -314,6 +325,24 @@ public class Main {
 			}
 			else if(tool.equalsIgnoreCase(TOOLNAME_CD_COMPARE)){
 				CDCompare.main_cdCompare(argmap);
+			}
+			else if(tool.equalsIgnoreCase(TOOLNAME_CTXGEN)){
+				CtxGen.main_ctxgen(argmap);
+			}
+			else if(tool.equalsIgnoreCase(TOOLNAME_SYMHIST_UPDATE)){
+				SymbolHist.main_updateSymHistRecord(argmap);
+			}
+			else if(tool.equalsIgnoreCase(TOOLNAME_SYMHIST_REPLACE)){
+				SymbolHist.main_updateCodeSymbols(argmap);
+			}
+			else if(tool.equalsIgnoreCase(TOOLNAME_RM_DUMMY_RET)){
+				Rmjrra.main_rmjrra(argmap);
+			}
+			else if(tool.equalsIgnoreCase(TOOLNAME_PCM_ME)){
+				PCMMe.main_pcmme(argmap);
+			}
+			else if(tool.equalsIgnoreCase(TOOLNAME_SPUENC)){
+				SpuEnc.main_spuenc(argmap);
 			}
 			else if(tool.equalsIgnoreCase(TOOLNAME_TESTNATIVE)){
 				testNative();

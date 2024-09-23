@@ -401,7 +401,7 @@ public class MCT_Main {
 		for(MCTSymbol symbol : module.textSymbols) {
 			String spath = module.sSplitDir + File.separator + symbol.name + ".s";
 			BufferedWriter bw = new BufferedWriter(new FileWriter(spath));
-			bw.write(".include \"macro.inc\"\n\n");
+			//bw.write(".include \"macro.inc\"\n\n");
 			bw.write(".set noat\n");
 			bw.write(".set noreorder\n\n");
 			bw.write("/* Split from spimdisasm 1.27.0 output */\n\n");
@@ -429,7 +429,7 @@ public class MCT_Main {
 		if((totalRoCount - usedRoCount) > 0) {
 			String spath = module.sSplitDir + File.separator + module.modName + ".rodata.s";
 			BufferedWriter bw = new BufferedWriter(new FileWriter(spath));
-			bw.write(".include \"macro.inc\"\n\n");
+			//bw.write(".include \"macro.inc\"\n\n");
 			bw.write(".section .rodata\n\n");
 			bw.write("/* Split from spimdisasm 1.27.0 output */\n\n");
 			for(MCTSymbol roSym : module.rodataSymbols) {
@@ -445,7 +445,7 @@ public class MCT_Main {
 		if(!module.dataSymbols.isEmpty()) {
 			String spath = module.sSplitDir + File.separator + module.modName + ".data.s";
 			BufferedWriter bw = new BufferedWriter(new FileWriter(spath));
-			bw.write(".include \"macro.inc\"\n\n");
+			//bw.write(".include \"macro.inc\"\n\n");
 			bw.write(".section .data\n\n");
 			bw.write("/* Split from spimdisasm 1.27.0 output */\n\n");
 			for(MCTSymbol sym : module.dataSymbols) {
@@ -517,6 +517,8 @@ public class MCT_Main {
 			if(module.textPath != null) {
 				AsmScanning.readInSymbols(module.textPath, module);
 			}
+			
+			module.linkLocalROData();
 			
 			if(mode_i == MODE_TEMPLGEN) {
 				//Scan dependents

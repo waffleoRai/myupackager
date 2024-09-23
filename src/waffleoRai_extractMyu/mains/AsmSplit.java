@@ -147,9 +147,10 @@ public class AsmSplit {
 	
 	public static void main_asmSplit(Map<String, String> argmap) throws IOException {
 		//Scans through asm dir, finds unique modules, and just calls MCT_Main on each
-		String asmdir = argmap.get("asmdir");
-		String outdir = argmap.get("outdir");
-		String cdir = argmap.get("cdir");
+		String asmdir = MyuArcCommon.getSystemAbsolutePath(argmap.get("asmdir"));
+		String outdir = MyuArcCommon.getSystemAbsolutePath(argmap.get("outdir"));
+		String cdir = MyuArcCommon.getSystemAbsolutePath(argmap.get("cdir"));
+		
 		if(asmdir == null) {
 			MyuPackagerLogger.logMessage("AsmSplit.main_asmSplit", "ASM directory path is required!");
 			Main.printUsage_AsmSplit();

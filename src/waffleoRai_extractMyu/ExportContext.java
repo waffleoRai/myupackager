@@ -1,5 +1,6 @@
 package waffleoRai_extractMyu;
 
+import waffleoRai_Sound.psx.PSXXAStream;
 import waffleoRai_Utils.FileBuffer;
 
 public class ExportContext {
@@ -11,6 +12,7 @@ public class ExportContext {
 	public String xml_wd;
 	
 	public FileBuffer data;
+	public PSXXAStream xaStr;
 	public LiteNode target_in;
 	public LiteNode target_out;
 	

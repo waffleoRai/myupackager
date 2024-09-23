@@ -23,10 +23,12 @@ public class BuildScripts {
 	private static final String SHVAR_WIN_TOOL = "WIN_TOOL";
 	private static final String SHVAR_INCL_DIR = "INCL_DIR";
 	private static final String SHVAR_MASPSX = "MASPSX_PATH";
+	private static final String SHVAR_MYUJAR = "MYUJAR";
+	private static final String SHVAR_MYUPACK = "MYUPACK";
 	
 	private static final String ADD_ASM_ARGS = "-mips1 -msoft-float";
 	private static final String ADD_GCC_ARGS = "-msoft-float -mlong32 -finline -fpeephole";
-	private static final String ADD_MASPSX_ARGS = "--aspsx-version=2.86";
+	private static final String ADD_MASPSX_ARGS = "--aspsx-version=2.86 --dont-force-G0";
 	
 	private static class BuildModule{
 		public String name;
@@ -46,6 +48,7 @@ public class BuildScripts {
 		public String cPath;
 		public String cOptLevel;
 		public String inclDirs;
+		public boolean asmAdj = false;
 	}
 	
 	private String xmlPath;
@@ -57,17 +60,19 @@ public class BuildScripts {
 	private String buildDir;
 	private boolean gnuFlag = false;
 	private boolean wslFlag = false;
+	private boolean bsscomm = false;
 	
 	private ArrayList<BuildModule> modules;
 	
 	private static boolean checkArgs(Map<String, String> argmap, BuildScripts ctx) throws IOException {
-		ctx.xmlPath = argmap.get("xmlspec");
-		ctx.shPath = argmap.get("shout");
-		ctx.ldPath = argmap.get("ldout");
-		ctx.objPath = argmap.get("binout");
-		ctx.buildDir = argmap.get("builddir");
+		ctx.xmlPath = MyuArcCommon.getSystemAbsolutePath(argmap.get("xmlspec"));
+		ctx.shPath = MyuArcCommon.getSystemAbsolutePath(argmap.get("shout"));
+		ctx.ldPath = MyuArcCommon.getSystemAbsolutePath(argmap.get("ldout"));
+		ctx.objPath = MyuArcCommon.getSystemAbsolutePath(argmap.get("binout"));
+		ctx.buildDir = MyuArcCommon.getSystemAbsolutePath(argmap.get("builddir"));
 		ctx.gnuFlag = argmap.containsKey("gnu");
 		ctx.wslFlag = argmap.containsKey("wsl");
+		ctx.bsscomm = argmap.containsKey("bsscomm");
 		
 		if(ctx.xmlPath == null) {
 			MyuPackagerLogger.logMessage("BuildScripts.checkArgs", "Input XML is required!");
@@ -78,10 +83,7 @@ public class BuildScripts {
 			return false;
 		}
 		
-		ctx.indir = ".";
-		if(ctx.xmlPath.contains(File.separator)) {
-			ctx.indir = ctx.xmlPath.substring(0, ctx.xmlPath.lastIndexOf(File.separator));
-		}
+		ctx.indir = MyuArcCommon.getContainingDir(ctx.xmlPath);
 		
 		if(ctx.buildDir == null) {
 			ctx.buildDir = ctx.indir + File.separator + "build";
@@ -178,13 +180,30 @@ public class BuildScripts {
 			if(!wslFlag) {
 				shOut.write("\"${" + SHVAR_WIN_TOOL + "}\" ");
 			}
-			shOut.write("\"${" + SHVAR_PSYQ_DIR + "}/CC1PSX.EXE\" -G0");
+			shOut.write("\"${" + SHVAR_PSYQ_DIR + "}/CC1PSX.EXE\" -G8");
 			shOut.write(" -" + moduleSpec.cOptLevel);
-			shOut.write(" -o \"" + spathRel + "\"\n");
-			shOut.write("mips-linux-gnu-as -EL -O0 -march=r3000 -no-pad-sections");
+			shOut.write(" -o \"" + spathRel + "\" 2>/dev/null\n");
+			
+			if(moduleSpec.asmAdj) {
+				//Couldn't figure out how to make compiler put things in the right order for INCLUDE_ASM
+				//So I have a cheese where I put all INCLUDE_ASM after the last defined function in a dummy function.
+				//So then I have to remove the last jr $ra for that dummy function
+				//Credit for the awk: https://stackoverflow.com/questions/23696871/how-to-remove-only-the-first-occurrence-of-a-line-in-a-file-using-sed
+				
+				//shOut.write("tac \"" + spathRel + "\" | awk '!/j*31/ || f++' | tac > \"" + spathRel + ".tmp\"\n");
+				shOut.write("${" + SHVAR_MYUPACK + "} rmjrra --input \"" + spathRel + "\" --output \"" + spathRel + ".tmp\"\n");
+				shOut.write("mv \"" + spathRel + ".tmp\" \"" + spathRel + "\"\n");
+			}
+			
+			//maspsx
+			shOut.write("python3 ${" + SHVAR_MASPSX + "} " + ADD_MASPSX_ARGS + " \"" + spathRel + "\" > \"" + spathRel + ".tmp\"\n");
+			shOut.write("mv \"" + spathRel + ".tmp\" \"" + spathRel + "\"\n");
+			
+			shOut.write("mips-linux-gnu-as -EL -O1 -march=r3000 -no-pad-sections -G8");
 			shOut.write(" " + ADD_ASM_ARGS);
 			shOut.write(" -I \"${" + SHVAR_INCL_DIR + "}\"");
-			shOut.write(" -o \"" + moduleSpec.oPathRel + "\"\n");
+			shOut.write(" -o \"" + moduleSpec.oPathRel + "\"");
+			shOut.write(" \"" + spathRel + "\"\n");
 			
 			shOut.write("rm \"" + spathRel + "\"\n\n");
 		}
@@ -341,11 +360,15 @@ public class BuildScripts {
 		for(BuildModule mod : modules) {
 			if(mod.bssPath != null) {
 				//bw.write("\t\t" + mod.name + "_bss = .;\n");
-				bw.write("\t\t" + mod.oPathRel + "(.bss);\n");
+				if(bsscomm) {
+					bw.write("\t\t" + mod.oPathRel + "(.bss COMMON .scommon);\n");
+				}
+				else bw.write("\t\t" + mod.oPathRel + "(.bss);\n");
 			}
 			else {
 				if(!mod.useAsm) {
-					bw.write("\t\t" + mod.oPathRel + "(.bss);\n");
+					if(bsscomm) bw.write("\t\t" + mod.oPathRel + "(.bss COMMON .scommon);\n");
+					else bw.write("\t\t" + mod.oPathRel + "(.bss);\n");
 				}
 			}
 		}
@@ -424,6 +447,9 @@ public class BuildScripts {
 				String aval = buildSpecNode.attr.get("Optimization");
 				if(aval != null) mod.cOptLevel = aval;
 				else mod.cOptLevel = "O2";
+				
+				aval = buildSpecNode.attr.get("AsmAdj");
+				if(aval != null && aval.equalsIgnoreCase("true")) mod.asmAdj = true;
 			}
 			else {
 				MyuPackagerLogger.logMessage("BuildScripts.parseModuleNode", "WARNING: Module \"" + mod.name + "\" included, but no build method specified! Skipping!");
@@ -472,8 +498,10 @@ public class BuildScripts {
 		bw.write(SHVAR_SMERGE + "=./tools/merge_asm_module.sh\n");
 		bw.write(SHVAR_INCL_DIR + "=./include\n");
 		bw.write(SHVAR_WIN_TOOL + "=./tools/wibo\n");
-		bw.write(SHVAR_PSYQ_DIR + "=./tools/psyq4.6\n\n");
-		bw.write(SHVAR_MASPSX + "=./tools/maspsx/maspsx.py\n\n");
+		bw.write(SHVAR_PSYQ_DIR + "=./tools/psyq4.6\n");
+		bw.write(SHVAR_MASPSX + "=./tools/maspsx/maspsx.py\n");
+		bw.write(SHVAR_MYUJAR + "=./tools/myu_packager/myupack.jar\n");
+		bw.write(SHVAR_MYUPACK + "=\"java -jar ${" + SHVAR_MYUJAR + "}\"\n\n");
 		bw.write("wdir=$(pwd)\n");
 		bw.write("echo -e \"Working dir: ${wdir}\"\n\n");
 		for(BuildModule mod : ctx.modules) ctx.processModuleBuild(mod, bw);

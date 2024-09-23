@@ -99,6 +99,8 @@ public class ObjCheck {
 			//Go through each subsection
 			boolean mismatchFound = false;
 			for(String sname : snames) {
+				boolean nobits = false;
+				
 				//get exe position from sectbl
 				long staddr = 0;
 				int ssize = 0;
@@ -120,84 +122,109 @@ public class ObjCheck {
 				}
 				else if(sname.equals(".sbss")) {
 					//staddr = sec.getSBssAddr();
-					//ssize = sec.getSBssSize();
-					continue;
+					ssize = sec.getSBssSize();
+					nobits = true;
 				}
 				else if(sname.equals(".bss")) {
 					//staddr = sec.getBssAddr();
-					//ssize = sec.getBssSize();
-					continue;
+					ssize = sec.getBssSize();
+					nobits = true;
 				}
 				
 				if(staddr < 1L || ssize < 1) continue;
 				long stoff = MyuCode.address2ExeOffset(staddr);
 				
 				ELFSection osec = obj.getSectionByName(sname);
-				FileBuffer refsec = exedat.createCopy(stoff, stoff + ssize);
-				FileBuffer odatf = FileBuffer.wrap(osec.getRawData());
-				odatf.setEndian(false);
-				
-				//Zero out any relocations
-				List<ELFReloc> relocs = obj.getRelocTableForSection(sname);
-				if(relocs != null && !relocs.isEmpty()) {
-					for(ELFReloc reloc : relocs) {
-						long rofs = reloc.getAddress();
-						int rtype = reloc.getType();
-						
-						switch(rtype) {
-						case MyuCode.MIPS_RELOC_26:
-							int word = refsec.intFromFile(rofs);
-							word &= ~0x03ffffff;
-							refsec.replaceInt(word, rofs);
-							odatf.replaceInt(word, rofs);
-							break;
-						case MyuCode.MIPS_RELOC_GPREL16:
-						case MyuCode.MIPS_RELOC_HI16:
-						case MyuCode.MIPS_RELOC_LO16:
-						case MyuCode.MIPS_RELOC_PC16:
-							refsec.replaceShort((short)0, rofs);
-							odatf.replaceShort((short)0, rofs);
-							break;
-						case MyuCode.MIPS_RELOC_32:
-							refsec.replaceInt(0, rofs);
-							odatf.replaceInt(0, rofs);
-							break;
-						default:
-							MyuPackagerLogger.logMessage("ObjCheck.main_objcheck", "ERROR: Unknown reloc type: " + rtype);
-							break;
-						}
-					}
-				}
-
-				//Compare. If mismatch flag and print
-				byte[] odat = odatf.getBytes();
-				int mismatchPos = -1;
-				for(int i = 0; i < ssize; i++) {
-					if(i >= odat.length) {
-						mismatchPos = i;
-						break;
-					}
-					byte rb = refsec.getByte(i);
-					if(rb != odat[i]) {
-						mismatchPos = i;
-						break;
-					}
-				}
-				if(mismatchPos < 0) {
-					//Make sure odat is not bigger.
-					if(odat.length > ssize) mismatchPos = ssize;
-				}
-				refsec.dispose();
-				
-				if(mismatchPos >= 0) {
+				if(osec == null) {
 					if(!mismatchFound) {
 						//First mismatch.
 						System.out.println(fullname + ": [X]");
 					}
-					
-					long mismatchAddr = staddr + mismatchPos;
-					System.out.println(String.format("\t%s @ 0x%08x", sname, mismatchAddr));
+					System.out.println(String.format("\t%s - Section expected but not found", sname));
 					mismatchFound = true;
+					continue;
+				}
+				
+				if(!nobits) {
+					FileBuffer refsec = exedat.createCopy(stoff, stoff + ssize);
+					FileBuffer odatf = FileBuffer.wrap(osec.getRawData());
+					odatf.setEndian(false);
+					long osize = osec.getROMSize();
+					
+					//Zero out any relocations
+					List<ELFReloc> relocs = obj.getRelocTableForSection(sname);
+					if(relocs != null && !relocs.isEmpty()) {
+						for(ELFReloc reloc : relocs) {
+							long rofs = reloc.getAddress();
+							int rtype = reloc.getType();
+							
+							switch(rtype) {
+							case MyuCode.MIPS_RELOC_26:
+								int word = refsec.intFromFile(rofs);
+								word &= ~0x03ffffff;
+								if(rofs <= (ssize - 4)) refsec.replaceInt(word, rofs);
+								if(rofs <= (osize - 4)) odatf.replaceInt(word, rofs);
+								break;
+							case MyuCode.MIPS_RELOC_GPREL16:
+							case MyuCode.MIPS_RELOC_HI16:
+							case MyuCode.MIPS_RELOC_LO16:
+							case MyuCode.MIPS_RELOC_PC16:
+								if(rofs <= (ssize - 2)) refsec.replaceShort((short)0, rofs);
+								if(rofs <= (osize - 2)) odatf.replaceShort((short)0, rofs);
+								break;
+							case MyuCode.MIPS_RELOC_32:
+								if(rofs <= (ssize - 4)) refsec.replaceInt(0, rofs);
+								if(rofs <= (osize - 4)) odatf.replaceInt(0, rofs);
+								break;
+							default:
+								MyuPackagerLogger.logMessage("ObjCheck.main_objcheck", "ERROR: Unknown reloc type: " + rtype);
+								break;
+							}
+						}
+					}
+
+					//Compare. If mismatch flag and print
+					int mismatchPos = -1;
+					byte[] odat = odatf.getBytes();
+					for(int i = 0; i < ssize; i++) {
+						if(i >= odat.length) {
+							mismatchPos = i;
+							break;
+						}
+						byte rb = refsec.getByte(i);
+						if(rb != odat[i]) {
+							mismatchPos = i;
+							break;
+						}
+					}
+					if(mismatchPos < 0) {
+						//Make sure odat is not bigger.
+						if(odat.length > ssize) mismatchPos = ssize;
+					}
+					refsec.dispose();
+					
+					if(mismatchPos >= 0) {
+						if(!mismatchFound) {
+							//First mismatch.
+							System.out.println(fullname + ": [X]");
+						}
+						
+						long mismatchAddr = staddr + mismatchPos;
+						System.out.println(String.format("\t%s @ 0x%08x (OG Size: 0x%x, Rebuilt Size: 0x%x)", sname, mismatchAddr, ssize, osize));
+						mismatchFound = true;
+					}
+				}
+				else {
+					//Just compare sizes!
+					int osize = (int)osec.getROMSize();
+					if(osize != ssize) {
+						if(!mismatchFound) {
+							//First mismatch.
+							System.out.println(fullname + ": [X]");
+						}
+						System.out.println(String.format("\t%s (OG Size: 0x%x, Rebuilt Size: 0x%x)", sname, ssize, osize));
+						mismatchFound = true;
+					}
 				}
 			}
 			

@@ -22,6 +22,7 @@ public class MyuUnkTypeHandler implements TypeHandler{
 		try {
 			int ret = 0;
 			FileBuffer data = FileBuffer.createBuffer(filename, false);
+			ctx.decompSize = (int)data.getFileSize();
 			if(ctx.lzMode > 0) {
 				if(ctx.matchFlag) {
 					MatchFile mf = new MatchFile();
@@ -62,7 +63,6 @@ public class MyuUnkTypeHandler implements TypeHandler{
 				data.writeToStream(ctx.output);
 			}
 			data.dispose();
-			ctx.decompSize = ret;
 			return ret;
 		}
 		catch(IOException ex) {

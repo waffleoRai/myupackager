@@ -42,6 +42,19 @@ public class MyupkgConstants {
 	public static final String XML_ATTR_LOOPST = "LoopStart";
 	public static final String XML_ATTR_LOOPED = "LoopEnd";
 	public static final String XML_ATTR_LOOPCT = "LoopCount";
+	public static final String XML_ATTR_STRCHANNEL = "StreamChannel";
+	public static final String XML_ATTR_SAMPLEID = "SampleId";
+	public static final String XML_ATTR_START = "Start";
+	public static final String XML_ATTR_SECCOUNT = "SectorCount";
+	public static final String XML_ATTR_AUDCH = "AudioChannels";
+	public static final String XML_ATTR_IS_STEREO = "IsStereo";
+	public static final String XML_ATTR_SAMPLERATE = "SampleRate";
+	public static final String XML_ATTR_DBLSPEED = "DoubleSpeed";
+	public static final String XML_ATTR_XAFILEIDX = "XAFileIndex";
+	public static final String XML_ATTR_SETTINGS = "Settings";
+	public static final String XML_ATTR_TBLNAME_GRP = "GroupTableName";
+	public static final String XML_ATTR_TBLNAME_CLIP = "ClipTableName";
+	public static final String XML_ATTR_CMERGE = "CMerge";
 	
 	public static final String XML_ATTR_VOLUMEID = "VolId";
 	public static final String XML_ATTR_PUBID = "PublisherId";
@@ -68,6 +81,8 @@ public class MyupkgConstants {
 	public static final String XML_NODENAME_PSLOGO = "PSLogo";
 	public static final String XML_NODENAME_CDFILE = "CDFile";
 	public static final String XML_NODENAME_CDTRACK = "CDTrack";
+	public static final String XML_NODENAME_CLIPGROUP = "ClipGroup";
+	public static final String XML_NODENAME_XA_AUDIOCLIP = "XAAudioClip";
 	
 	public static final String XML_CDFILETYPE_ARC = "Archive"; //If this, then the value points to an xml telling how to build the arc
 	public static final String XML_CDFILETYPE_FILE = "File"; //If this, then value points directly to file to include
@@ -86,12 +101,18 @@ public class MyupkgConstants {
 	public static final String ASSET_TYPE_BIN = "BinFile";
 	public static final String ASSET_TYPE_ANIMUNK = "UnkAnime";
 	public static final String ASSET_TYPE_CLUTENTRY = "ClutEntry";
+	public static final String ASSET_TYPE_XAAUDIO = "StreamAudioClip";
+	public static final String ASSET_TYPE_XAMOVIE = "MdecMovie";
+	public static final String ASSET_TYPE_XAVIDEO = "MdecVideoStream";
+	public static final String ASSET_TYPE_CLIPGROUP = "ClipGroup";
 	
 	public static final String FTYPE_UNK = "Unknown";
 	public static final String FTYPE_AUNK = "UnkAnime";
 	public static final String FTYPE_SEQ = "Soundseq";
 	public static final String FTYPE_SBNK = "Soundbank";
 	public static final String FTYPE_IBNK = "Imagebank";
+	public static final String FTYPE_XAAUDIO = "XAAudioClip";
+	public static final String FTYPE_XAMOVIE = "MdecMovie";
 	
 	public static final String CLUT_IMPORT_TYPE_SOURCEFILE = "ImageSource";
 	public static final String CLUT_IMPORT_TYPE_MATCH = "Match";

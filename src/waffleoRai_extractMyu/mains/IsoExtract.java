@@ -49,12 +49,12 @@ public class IsoExtract {
 	}
 	
 	private static boolean checkArgs(Map<String, String> args, CDExtractContext ctx) throws IOException {
-		ctx.isoPath = args.get("iso");
-		ctx.cdOutputDir = args.get("cdout");
-		ctx.assetOutputDir = args.get("assetout");
-		ctx.arcSpecDir = args.get("arcspec"); //Arcspec dir
-		ctx.xmlPath = args.get("xmlout");
-		ctx.checksumPath = args.get("checksums");
+		ctx.isoPath = MyuArcCommon.getSystemAbsolutePath(args.get("iso"));
+		ctx.cdOutputDir = MyuArcCommon.getSystemAbsolutePath(args.get("cdout"));
+		ctx.assetOutputDir = MyuArcCommon.getSystemAbsolutePath(args.get("assetout"));
+		ctx.arcSpecDir = MyuArcCommon.getSystemAbsolutePath(args.get("arcspec"));
+		ctx.xmlPath = MyuArcCommon.getSystemAbsolutePath(args.get("xmlout"));
+		ctx.checksumPath = MyuArcCommon.getSystemAbsolutePath(args.get("checksums"));
 		
 		if(ctx.isoPath == null) {
 			//Check for cue sheet instead
@@ -337,7 +337,7 @@ public class IsoExtract {
 		Collections.sort(ctx.files);
 	}
 
-	private static void extractFiles(CDExtractContext ctx) throws IOException {
+	private static void extractFiles(CDExtractContext ctx) throws IOException, UnsupportedFileTypeException {
 		int lastEndSec = -1;
 		int ldiSec = -1;
 		RFile lastFile = null;

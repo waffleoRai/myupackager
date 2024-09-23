@@ -14,14 +14,17 @@ import java.nio.file.Paths;
 import java.util.Map;
 
 import waffleoRai_Utils.FileBuffer;
+import waffleoRai_Utils.FileBuffer.UnsupportedFileTypeException;
 import waffleoRai_Utils.StringUtils;
 import waffleoRai_extractMyu.ImportContext;
 import waffleoRai_extractMyu.LiteNode;
 import waffleoRai_extractMyu.LzLitZip;
+import waffleoRai_extractMyu.MdecMovieHandler;
 import waffleoRai_extractMyu.MyuArcCommon;
 import waffleoRai_extractMyu.MyuPackagerLogger;
 import waffleoRai_extractMyu.MyupkgConstants;
 import waffleoRai_extractMyu.TypeHandler;
+import waffleoRai_extractMyu.XAAudioHandler;
 
 public class ArcBuild {
 	
@@ -396,6 +399,13 @@ public class ArcBuild {
 			
 			//These are DECOMPRESSED!
 			if(lzMode > 0) {
+				//Fill in zeroes with one AHEAD (again... for some reason)
+				if(matchFlag) {
+					for(int j = (decsize_table.length - 2); j >= 0; j--) {
+						if(decsize_table[j] == 0) decsize_table[j] = decsize_table[j+1];
+					}
+				}
+				
 				fmtDigits = fmtHexDigitCount(decsize_table);
 				bw.write("\nuint32_t " + sizeTableName + "[] = {\n");
 				for(int i = 0; i < decsize_table.length; i+=8) {
@@ -429,9 +439,88 @@ public class ArcBuild {
 		return true;
 	}
 	
-	private int[] packageXAStream() {
-		//TODO
-		return null;
+	private void packageXAStream() throws IOException, UnsupportedFileTypeException {
+		String aval = specs.attr.get(MyupkgConstants.XML_ATTR_VSTREAM);
+		if((aval != null) && (aval.equalsIgnoreCase("true"))) {
+			MdecMovieHandler vhandle = new MdecMovieHandler();
+			vhandle.import_spec = specs;
+			vhandle.wd = working_dir;
+			
+			MyuPackagerLogger.logMessage("ArcBuild.packageXAStream", 
+					"Building A/V stream file...");
+			vhandle.buildStream(output_path);
+			
+			String hpath_local = null;
+			if(header_path != null) {
+				MyuPackagerLogger.logMessage("ArcBuild.packageXAStream", 
+						"Generating .h file(s)...");
+				
+				String hDir = MyuArcCommon.getContainingDir(header_path);
+				String inclDir = hDir;
+				int inclpos = inclDir.lastIndexOf("include");
+				if(inclpos >= 0) {
+					inclDir = inclDir.substring(0, inclpos + 7);
+				}
+				vhandle.exportH(header_path);
+				
+				hpath_local = MyuArcCommon.localPath2UnixRel(inclDir, header_path);
+				if(hpath_local.startsWith("./")) hpath_local = hpath_local.substring(2);
+			}
+			else {
+				hpath_local = "res/ResMovie.h";
+			}
+			
+			if(c_path != null) {
+				MyuPackagerLogger.logMessage("ArcBuild.packageXAStream", 
+						"Generating .c file(s)...");
+				
+				vhandle.exportC(c_path, hpath_local);
+			}
+			
+		}
+		else {
+			aval = specs.attr.get(MyupkgConstants.XML_ATTR_ASTREAM);
+			if((aval != null) && (aval.equalsIgnoreCase("true"))) {
+				XAAudioHandler ahandle = new XAAudioHandler();
+				ahandle.wd = working_dir;
+				ahandle.import_spec = specs;
+				
+				MyuPackagerLogger.logMessage("ArcBuild.packageXAStream", 
+						"Building stream file...");
+				ahandle.buildStream(output_path);
+				
+				String hpath_local = null;
+				if(header_path != null) {
+					MyuPackagerLogger.logMessage("ArcBuild.packageXAStream", 
+							"Generating .h file(s)...");
+					
+					String hDir = MyuArcCommon.getContainingDir(header_path);
+					String inclDir = hDir;
+					int inclpos = inclDir.lastIndexOf("include");
+					if(inclpos >= 0) {
+						inclDir = inclDir.substring(0, inclpos + 7);
+					}
+					ahandle.exportH(inclDir, header_path, hDir + File.separator + "xaaud");
+					
+					hpath_local = MyuArcCommon.localPath2UnixRel(inclDir, header_path);
+				}
+				else {
+					hpath_local = "res/ResVoice.h";
+				}
+				
+				if(c_path != null) {
+					MyuPackagerLogger.logMessage("ArcBuild.packageXAStream", 
+							"Generating .c file(s)...");
+					
+					ahandle.exportC(c_path, hpath_local);
+				}
+				
+			}
+			else {
+				MyuPackagerLogger.logMessage("ArcBuild.packageXAStream", 
+						"ERROR: Only A/V or audio streams supported!");
+			}
+		}
 	}
 	
 	private boolean tryPackArchive() {
@@ -454,7 +543,7 @@ public class ArcBuild {
 			else lzMode = -1;
 			
 			if(isStream) {
-				//TODO
+				packageXAStream();
 			}
 			else {
 				//Regular archive
